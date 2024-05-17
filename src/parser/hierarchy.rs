@@ -318,7 +318,7 @@ where
         );
         let name = self.text(&ident).to_string();
         let parameters = self.optional_declaration_parameter_list("Sub");
-        self.consume_line_delimiter();
+        self.consume_optional_line_delimiter();
         let body = self.block(true, &[T![end]]);
 
         self.consume(T![end]);

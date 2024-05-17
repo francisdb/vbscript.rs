@@ -1023,6 +1023,8 @@ static EXCLUDED_FILES: &[&str] = &[
     "sverrewl-vpxtable-scripts/Star Gazer(Stern 1980)Siggis Mod 1.0.vbs",
     "sverrewl-vpxtable-scripts/The Six Million Dollar Man (Bally 1978) v1.0.vbs",
     "sverrewl-vpxtable-scripts/Theatre of magic VPX NZ-TT 1.0.vbs",
+    // Uses `If ... End If` without Then TODO check if this is valid
+    "sverrewl-vpxtable-scripts/Bally Roller Derby 2.0.vbs",
     // see https://github.com/vpinball/vpinball/pull/1724
     "vpinball/scripts/UltraDMD_Options.vbs",
 ];

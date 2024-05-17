@@ -95,7 +95,7 @@ where
                 }
             }
             other => panic!(
-                "Unexpected token at line {}, column {}. Expected newline or colon, but found {}",
+                "{}:{} Unexpected token Expected newline or colon, but found {}",
                 peek.line, peek.column, other
             ),
         }
@@ -707,6 +707,41 @@ Const a = 1			' some info
                 elseif_statements: vec![],
                 else_stmt: None,
             })],
+        );
+    }
+    
+    #[test]
+    fn parse_sub_without_newline() {
+        let input = indoc! {r#"
+            Sub Trigger1_Hit() If BIP=1 Then
+                BIP=0
+                End If
+            End Sub
+        "#};
+        let mut parser = Parser::new(input);
+        let stmt = parser.statement(true);
+        assert_eq!(
+            stmt,
+            Stmt::Sub {
+                visibility: Visibility::Default,
+                name: "Trigger1_Hit".to_string(),
+                parameters: vec![],
+                body: vec![
+                    Stmt::IfStmt {
+                        condition: Box::new(Expr::InfixOp {
+                            op: T![=],
+                            lhs: Box::new(Expr::ident("BIP")),
+                            rhs: Box::new(Expr::int(1)),
+                        }),
+                        body: vec![Stmt::Assignment {
+                            full_ident: FullIdent::ident("BIP"),
+                            value: Box::new(Expr::int(0)),
+                        }],
+                        elseif_statements: vec![],
+                        else_stmt: None,
+                    },
+                ],
+            }
         );
     }
 
