@@ -22,8 +22,21 @@ fn word_callback(lex: &mut Lexer<LogosToken>) -> (usize, usize) {
 #[derive(Logos, Debug, PartialEq, Eq)]
 #[logos(extras = (usize, usize))]
 pub(super) enum LogosToken {
+    // On windows VBScript a property access can not have whitespace between the ident and the dot.
+    // However, after the dot there can be whitespace before the next ident.
+    // Mind that this also accepts parentheses for these cases:
+    // * `MyFunc().`
+    // * `(ident).`
+    // Since we try to not enable lookahead/behind we take the opposite logic
+    // and match dots prefixed with whitespace (but not newline)
+    // Give lower priority to this rule as it might interfere with floats defined as `.123`
+    // TODO can we fix this? Currently WS already consumes all the whitespace so there is no way to
+    //   so this rule is never hit in the lexer.
+    // #[regex(r"[ \t]+\.", word_callback)]
+    // Dot((usize, usize)),
     #[token(".", word_callback)]
     Dot((usize, usize)),
+    // DotSuffix((usize, usize)),
     #[token(":", word_callback)]
     Colon((usize, usize)),
     #[token(",", word_callback)]
@@ -64,19 +77,19 @@ pub(super) enum LogosToken {
     // Constructs
     #[regex(r#""([^"]|"")*""#, word_callback)]
     String((usize, usize)),
-    #[regex(r#"\d+"#, word_callback, priority = 2)]
+    #[regex(r#"\d+"#, word_callback, priority = 6)]
     Int((usize, usize)),
-    #[regex(r#"&[Hh][0-9A-Fa-f]+"#, word_callback, priority = 2)]
+    #[regex(r#"&[Hh][0-9A-Fa-f]+"#, word_callback, priority = 6)]
     HexInt((usize, usize)),
-    #[regex(r#"&O[0-7]+"#, word_callback, priority = 2)]
+    #[regex(r#"&O[0-7]+"#, word_callback, priority = 6)]
     OctalInt((usize, usize)),
     #[regex(
-        r#"((\d+(\.\d*)?)|(\.\d+))([Ee](\+|-)?\d+)?"#,
+        r#"((\d+\.\d*)|(\.\d+))([Ee](\+|-)?\d+)?|\d([Ee](\+|-)?\d+)"#,
         word_callback,
-        priority = 1
+        priority = 100
     )]
     Float((usize, usize)),
-    #[regex(r#"([A-Za-z])([A-Za-z]|_|\d)*"#, word_callback, priority = 3)]
+    #[regex(r#"([A-Za-z])([A-Za-z]|_|\d)*"#, word_callback)]
     Ident((usize, usize)),
 
     // Keywords
@@ -260,6 +273,7 @@ impl LogosToken {
         use LogosToken::*;
         let mut line_col = match self {
             Dot((line, column)) => (*line, *column),
+            //DotSuffix((line, column)) => (*line, *column),
             NewLine((line, _)) => (*line, 0),
             Ampersand((line, column)) => (*line, *column),
             Colon((line, column)) => (*line, *column),
@@ -375,6 +389,7 @@ impl LogosToken {
         use LogosToken::*;
         match self {
             Dot(_)          => T![.],
+            //DotSuffix(_)    => T![_.],
             Colon(_)        => T![:],
             Comma(_)        => T![,],
             Semi(_)         => T![;],

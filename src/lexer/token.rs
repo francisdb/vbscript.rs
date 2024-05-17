@@ -121,6 +121,7 @@ pub enum TokenKind {
     Pow,
     Eq,
     Dot,
+    DotSuffix,
     Comma,
     Bang,
     Ampersand,
@@ -253,6 +254,9 @@ macro_rules! T {
     // Single characters
     [.] => {
         $crate::lexer::TokenKind::Dot
+    };
+    [_.] => {
+        $crate::lexer::TokenKind::DotSuffix
     };
     [+] => {
         $crate::lexer::TokenKind::Plus
@@ -553,6 +557,7 @@ impl fmt::Display for TokenKind {
             match self {
                 // Single characters
                 T![.] => ".",
+                T![_.] => "_.",
                 T![+] => "+",
                 T![-] => "-",
                 T![*] => "*",

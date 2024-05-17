@@ -480,6 +480,24 @@ mod test {
     }
 
     #[test]
+    fn tokenize_space_dot_float() {
+        let input = " .3";
+        let mut lexer = Lexer::new(input);
+        let tokens: Vec<_> = lexer.tokenize();
+        let token_kinds = tokens.iter().map(|t| t.kind).collect::<Vec<_>>();
+        assert_eq!(token_kinds, [T![ws], T![real_literal], T![EOF],]);
+    }
+
+    #[test]
+    fn float_literal_without_fraction_with_exponent() {
+        let input = "2e400";
+        let mut lexer = Lexer::new(input);
+        let tokens: Vec<_> = lexer.tokenize();
+        let token_kinds = tokens.iter().map(|t| t.kind).collect::<Vec<_>>();
+        assert_eq!(token_kinds, [T![real_literal], T![EOF],]);
+    }
+
+    #[test]
     fn tokenize_spaced_property_access() {
         // This should even work with _ between the . and the property name
         let input = "o. _\n s";
@@ -503,10 +521,11 @@ mod test {
     #[test]
     fn tokenize_spaced_property_access_invalid() {
         // Fails on windows with: runtime error: Invalid or unqualified reference
-        let input = "o .s";
+        let input = "o  .s";
         let mut lexer = Lexer::new(input);
         let tokens: Vec<_> = lexer.tokenize();
         let token_kinds = tokens.iter().map(|t| t.kind).collect::<Vec<_>>();
         assert_eq!(token_kinds, [T![ident], T![ws], T![.], T![ident], T![EOF],]);
     }
+    
 }

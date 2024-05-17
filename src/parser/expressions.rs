@@ -48,7 +48,7 @@ where
                 | op @ T![>=]
                 | op @ T![not]
                 | op @ T!['(']
-                // | op @ T![.]
+                | op @ T![_.]
                 | op @ T![&] => op,
                 T![EOF] => break,
                 T![')'] | T![,] => break,
@@ -79,18 +79,18 @@ where
             }
 
             // highest binding power
-            // This does not work because we need to be sure there is no space between the base and the dot.
+            // _. is the same as . but disallows whitespace between the dot and the base.
             // The property itself is allowed to be prefixed with whitespace.
-            // if op == T![.] {
-            //     self.consume(T![.]);
-            //     let ident = self.consume(T![ident]);
-            //     let property = self.text(&ident).to_string();
-            //     lhs = Expr::PropertyAccess {
-            //         base: Box::new(lhs),
-            //         property,
-            //     };
-            //     continue;
-            // }
+            if op == T![_.] {
+                self.consume(T![_.]);
+                let ident = self.consume(T![ident]);
+                let property = self.text(&ident).to_string();
+                lhs = Expr::PropertyAccess {
+                    base: Box::new(lhs),
+                    property,
+                };
+                continue;
+            }
 
             if let Some((left_binding_power, right_binding_power)) = op.infix_binding_power() {
                 if left_binding_power < binding_power {
@@ -537,6 +537,7 @@ mod test {
 
     #[test]
     fn test_parenthesized_property_access_check() {
+        // eg `if (wheelchange).enabled=false then`
         let input = "(foo).enabled=false";
         let mut parser = Parser::new(input);
         let expr = parser.expression();

@@ -115,6 +115,7 @@ where
 /// Iterator over the tokens of the lexer, filtering out whitespace, empty lines and comments.
 pub struct TokenIter<'input> {
     lexer: Lexer<'input>,
+    prev_token_kind_including_ws: TokenKind,
     prev_token_kind: TokenKind,
 }
 
@@ -123,6 +124,7 @@ impl<'input> TokenIter<'input> {
         Self {
             lexer: Lexer::new(input),
             prev_token_kind: T![nl],
+            prev_token_kind_including_ws: T![nl],
         }
     }
 }
@@ -133,26 +135,45 @@ impl<'input> Iterator for TokenIter<'input> {
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             let current_token = self.lexer.next()?;
+            // translate [non-whitepace, .] to [non-whitepace, _.]
+            // without lookahead/back on the lexer we can't do this kind of check
+            if !matches!(self.prev_token_kind_including_ws, T![nl] | T![ws]) && matches!(current_token.kind, T![.]) {
+                let repacement_token = Token {
+                    kind: T![_.],
+                    span: current_token.span,
+                    line: current_token.line,
+                    column: current_token.column,
+                };
+                self.prev_token_kind_including_ws = repacement_token.kind;
+                self.prev_token_kind = repacement_token.kind;
+                return Some(repacement_token);
+            }
+            
             // ignore whitespace
             if matches!(current_token.kind, T![ws]) {
+                self.prev_token_kind_including_ws = current_token.kind;
                 continue;
             }
             if matches!(current_token.kind, T![line_continuation]) {
                 // the lexer already consumes the newline
+                self.prev_token_kind_including_ws = current_token.kind;
                 continue;
             }
             // skip empty lines
             if matches!(self.prev_token_kind, T![nl]) && matches!(current_token.kind, T![nl]) {
                 self.prev_token_kind = current_token.kind;
+                self.prev_token_kind_including_ws = current_token.kind;
                 continue;
             }
             // skip single line comments that are preceded by a newline
             if matches!(self.prev_token_kind, T![nl]) && matches!(current_token.kind, T![comment]) {
                 // hacky way to not keep the comment newline
                 self.prev_token_kind = T![nl];
+                self.prev_token_kind_including_ws = T![nl];
                 continue;
             }
             self.prev_token_kind = current_token.kind;
+            self.prev_token_kind_including_ws = current_token.kind;
             if !matches!(current_token.kind, T![comment]) {
                 return Some(current_token);
             } // else continue

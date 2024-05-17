@@ -1073,6 +1073,12 @@ where
         let base = if self.at(T![.]) {
             self.consume(T![.]);
             IdentBase::Partial(self.ident_part())
+        } else if self.at(T![_.]) {
+            // Eg an expression at the start of a line will not match the T![.]
+            // because we use the inverse logic in that T![.] actually requires whitespace to be 
+            // matched.
+            self.consume(T![_.]);
+            IdentBase::Partial(self.ident_part())
         } else if self.at(T![me]) {
             self.consume(T![me]);
             // TODO can we have array indices on me?
@@ -1085,8 +1091,8 @@ where
 
         let mut property_accesses = vec![];
         // TODO in windows you can't have a space between the property and the dot
-        while self.at(T![.]) {
-            self.consume(T![.]);
+        while self.at(T![_.]) {
+            self.consume(T![_.]);
             let part = self.ident_part();
             property_accesses.push(part);
         }
