@@ -1013,16 +1013,16 @@ fn test_lexer_full_class() {
 // TODO make sure we can remove these exclusions
 static EXCLUDED_FILES: &[&str] = &[
     // all below for Error { kind: InvalidData, message: "stream did not contain valid UTF-8" }
-    "vpxtable_scripts/Aztec (Williams 1976) 1.3 Mod Citedor JPJ-ARNGRIM-CED Team PP.vbs",
-    "vpxtable_scripts/Cactus Canyon (Bally 1998) TTNZ v2.0.vbs",
-    "vpxtable_scripts/Check Mate (Taito - 1977) 1.0.0.vbs",
-    "vpxtable_scripts/Demolition Man (Knorr-Kiwi) 1.3.1.vbs",
-    "vpxtable_scripts/Freddy A Nightmare On Elm Street (Gottlieb 1994) 1.1b JPJ - Team PP - Hauntfreaks Mod.vbs",
-    "vpxtable_scripts/Lucky Luke (Gottlieb 1975 - FastDrawMod) v0.91.vbs",
-    "vpxtable_scripts/Star Gazer(Stern 1980) v1.2.vbs",
-    "vpxtable_scripts/Star Gazer(Stern 1980)Siggis Mod 1.0.vbs",
-    "vpxtable_scripts/The Six Million Dollar Man (Bally 1978) v1.0.vbs",
-    "testscripts/vpxtable_scripts/Theatre of magic VPX NZ-TT 1.0.vbs",
+    "sverrewl-vpxtable-scripts/Aztec (Williams 1976) 1.3 Mod Citedor JPJ-ARNGRIM-CED Team PP.vbs",
+    "sverrewl-vpxtable-scripts/Cactus Canyon (Bally 1998) TTNZ v2.0.vbs",
+    "sverrewl-vpxtable-scripts/Check Mate (Taito - 1977) 1.0.0.vbs",
+    "sverrewl-vpxtable-scripts/Demolition Man (Knorr-Kiwi) 1.3.1.vbs",
+    "sverrewl-vpxtable-scripts/Freddy A Nightmare On Elm Street (Gottlieb 1994) 1.1b JPJ - Team PP - Hauntfreaks Mod.vbs",
+    "sverrewl-vpxtable-scripts/Lucky Luke (Gottlieb 1975 - FastDrawMod) v0.91.vbs",
+    "sverrewl-vpxtable-scripts/Star Gazer(Stern 1980) v1.2.vbs",
+    "sverrewl-vpxtable-scripts/Star Gazer(Stern 1980)Siggis Mod 1.0.vbs",
+    "sverrewl-vpxtable-scripts/The Six Million Dollar Man (Bally 1978) v1.0.vbs",
+    "sverrewl-vpxtable-scripts/Theatre of magic VPX NZ-TT 1.0.vbs",
     // see https://github.com/vpinball/vpinball/pull/1724
     "vpinball/scripts/UltraDMD_Options.vbs",
 ];
