@@ -534,4 +534,22 @@ mod test {
             }
         );
     }
+
+    #[test]
+    fn test_parenthesized_property_access_check() {
+        let input = "(foo).enabled=false";
+        let mut parser = Parser::new(input);
+        let expr = parser.expression();
+        assert_eq!(
+            expr,
+            Expr::InfixOp {
+                op: T![=],
+                lhs: Box::new(Expr::PropertyAccess {
+                    base: Box::new(Expr::IdentFnSubCall(FullIdent::ident("foo"))),
+                    property: "enabled".to_string(),
+                }),
+                rhs: Box::new(Literal(Lit::Bool(false))),
+            }
+        );
+    }
 }

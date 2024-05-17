@@ -709,7 +709,7 @@ Const a = 1			' some info
             })],
         );
     }
-    
+
     #[test]
     fn parse_sub_without_newline() {
         let input = indoc! {r#"
@@ -726,21 +726,19 @@ Const a = 1			' some info
                 visibility: Visibility::Default,
                 name: "Trigger1_Hit".to_string(),
                 parameters: vec![],
-                body: vec![
-                    Stmt::IfStmt {
-                        condition: Box::new(Expr::InfixOp {
-                            op: T![=],
-                            lhs: Box::new(Expr::ident("BIP")),
-                            rhs: Box::new(Expr::int(1)),
-                        }),
-                        body: vec![Stmt::Assignment {
-                            full_ident: FullIdent::ident("BIP"),
-                            value: Box::new(Expr::int(0)),
-                        }],
-                        elseif_statements: vec![],
-                        else_stmt: None,
-                    },
-                ],
+                body: vec![Stmt::IfStmt {
+                    condition: Box::new(Expr::InfixOp {
+                        op: T![=],
+                        lhs: Box::new(Expr::ident("BIP")),
+                        rhs: Box::new(Expr::int(1)),
+                    }),
+                    body: vec![Stmt::Assignment {
+                        full_ident: FullIdent::ident("BIP"),
+                        value: Box::new(Expr::int(0)),
+                    }],
+                    elseif_statements: vec![],
+                    else_stmt: None,
+                },],
             }
         );
     }
