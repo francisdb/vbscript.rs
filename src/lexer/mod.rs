@@ -216,13 +216,16 @@ mod test {
         let tokens: Vec<_> = lexer.map(|t| t.kind).collect();
         assert_eq!(tokens, vec![T![hex_integer_literal], T![EOF],]);
     }
+    
+    
 
     #[test]
     fn octal_integer_literal() {
-        let input = "&O10";
+        // 0 prefix not mandatory
+        let input = "&010+&10";
         let lexer = Lexer::new(input);
         let tokens: Vec<_> = lexer.map(|t| t.kind).collect();
-        assert_eq!(tokens, vec![T![octal_integer_literal], T![EOF],]);
+        assert_eq!(tokens, vec![T![octal_integer_literal], T![+], T![octal_integer_literal], T![EOF],]);
     }
 
     #[test]

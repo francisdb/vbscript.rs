@@ -18,7 +18,8 @@ for repo in "${repos[@]}"; do
   if [ -d "$dir" ]; then
     echo "Updating $dir"
     cd "$dir"
-    git pull
+    git fetch origin
+    git reset --hard origin/HEAD
     cd ..
   else
     echo "Cloning $dir"

@@ -137,7 +137,7 @@ impl<'input> Iterator for TokenIter<'input> {
             let current_token = self.lexer.next()?;
             // translate [non-whitepace, .] to [non-whitepace, _.]
             // without lookahead/back on the lexer we can't do this kind of check
-            if !matches!(self.prev_token_kind_including_ws, T![nl] | T![ws]) && matches!(current_token.kind, T![.]) {
+            if !matches!(self.prev_token_kind_including_ws, T![nl] | T![ws] | T![:]) && matches!(current_token.kind, T![.]) {
                 let repacement_token = Token {
                     kind: T![_.],
                     span: current_token.span,
