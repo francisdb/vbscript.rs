@@ -1,0 +1,18 @@
+[package]
+name = "vbscript"
+version = "0.1.0"
+edition = "2021"
+description = "Rust VBScript lexer and parser "
+repository = "https://github.com/francisdb/vbscript.rs"
+readme = "README.md"
+license = "MIT"
+documentation = "https://docs.rs/vbscript"
+
+[dependencies]
+lazy_static = "1.4.0"
+logos = "0.14.0"
+
+[dev-dependencies]
+pretty_assertions = "1.4.0"
+indoc = "2.0.5"
+glob = "0.3.1"
