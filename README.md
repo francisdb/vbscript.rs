@@ -17,6 +17,9 @@ https://github.com/francisdb/vbsfmt
 
 ## Other links
 
+* The [wine](https://www.winehq.org/) project has a similar lexer/parser/interpreter in C, but it's COM based and not
+  very easy to use as a library: https://gitlab.winehq.org/wine/wine/-/tree/master/dlls/vbscript
+
 * Vbsedit VBScript help: https://www.vbsedit.com/html/1c457e66-a6b2-4545-b2dd-33a59d8661e8.asp
 * Vbsedit Example vbs files: https://www.vbsedit.com/scripts/default.asp
 
