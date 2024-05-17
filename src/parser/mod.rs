@@ -835,6 +835,17 @@ Const a = 1			' some info
         let all = parser.file();
         assert_eq!(all, vec![Item::OptionExplicit,]);
     }
+    
+    #[test]
+    fn parse_option_and_randomize_on_slingle_line() {
+        let input = "Option Explicit : Randomize";
+        let mut parser = Parser::new(input);
+        let all = parser.file();
+        assert_eq!(all, vec![Item::OptionExplicit, Item::Statement(Stmt::SubCall{
+            fn_name: FullIdent::ident("Randomize"),
+            args: vec![],
+        }),]);
+    }
 
     #[test]
     fn test_parse_no_arg_sub_call() {

@@ -300,7 +300,7 @@ where
             }
             _ => panic!("Expected `explicit` after `option`"),
         }
-        self.consume_if_not_eof(T![nl]);
+        self.consume_line_delimiter();
         Item::OptionExplicit
     }
 
