@@ -920,7 +920,7 @@ where
     fn statement_while(&mut self) -> Stmt {
         self.consume(T![while]);
         let condition = self.expression();
-        self.consume(T![nl]);
+        self.consume_line_delimiter();
 
         let body = self.block(true, &[T![wend]]);
 

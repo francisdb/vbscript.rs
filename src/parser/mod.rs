@@ -149,7 +149,7 @@ impl<'input> Iterator for TokenIter<'input> {
                 self.prev_token_kind = repacement_token.kind;
                 return Some(repacement_token);
             }
-            
+
             // ignore whitespace
             if matches!(current_token.kind, T![ws]) {
                 self.prev_token_kind_including_ws = current_token.kind;
@@ -411,6 +411,39 @@ Const a = 1			' some info
                     }),
                 },],
             }
+        );
+    }
+
+    #[test]
+    fn test_while_single_line(){
+        let input = r#"while skipIdx = skipIdx2:skipIdx2=Int(Rnd*6):wend"#;
+        let mut parser = Parser::new(input);
+        let items = parser.file();
+        assert_eq!(
+            items,
+            vec![Item::Statement(Stmt::WhileStmt {
+                condition: Box::new(Expr::InfixOp {
+                    op: T![=],
+                    lhs: Box::new(Expr::ident("skipIdx")),
+                    rhs: Box::new(Expr::ident("skipIdx2")),
+                }),
+                body: vec![
+                    Stmt::Assignment {
+                        full_ident: FullIdent::ident("skipIdx2"),
+                        value: Box::new(Expr::IdentFnSubCall(FullIdent {
+                            base: IdentBase::Complete(IdentPart {
+                                name: "Int".to_string(),
+                                array_indices: vec![vec![Some(Expr::InfixOp {
+                                    op: T![*],
+                                    lhs: Box::new(Expr::IdentFnSubCall(FullIdent::ident("Rnd"))),
+                                    rhs: Box::new(Expr::int(6)),
+                                }),],],
+                            }),
+                            property_accesses: vec![],
+                        })),
+                    },
+                ],
+            }),]
         );
     }
 
@@ -835,7 +868,7 @@ Const a = 1			' some info
         let all = parser.file();
         assert_eq!(all, vec![Item::OptionExplicit,]);
     }
-    
+
     #[test]
     fn parse_option_and_randomize_on_slingle_line() {
         let input = "Option Explicit : Randomize";
