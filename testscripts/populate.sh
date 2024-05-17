@@ -18,7 +18,7 @@ for repo in "${repos[@]}"; do
   if [ -d "$dir" ]; then
     echo "Updating $dir"
     cd "$dir"
-    git fetch origin
+    git fetch origin --depth 1
     git reset --hard origin/HEAD
     cd ..
   else

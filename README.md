@@ -25,6 +25,8 @@ https://github.com/francisdb/vbsfmt
 
 * Vbsedit VBScript help: https://www.vbsedit.com/html/1c457e66-a6b2-4545-b2dd-33a59d8661e8.asp
 * Vbsedit Example vbs files: https://www.vbsedit.com/scripts/default.asp
+* vpx-js vbscript bnf grammar https://github.com/vpdb/vpx-js/blob/master/lib/scripting/grammar/grammar.bnf
+* wine vbscript bison grammar https://gitlab.winehq.org/wine/wine/-/blob/master/dlls/vbscript/parser.y
 
 ## Running the integration tests
 
