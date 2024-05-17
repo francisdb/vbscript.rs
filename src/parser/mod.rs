@@ -138,7 +138,11 @@ impl<'input> Iterator for TokenIter<'input> {
             // translate [non-whitepace, .] to [non-whitepace, _.]
             // without lookahead/back on the lexer we can't do this kind of check
             // TODO would it not be better to do a positive check here checking for valid cases?
-            if !matches!(self.prev_token_kind_including_ws, T![nl] | T![ws] | T![:] | T!['(']| T![-]) && matches!(current_token.kind, T![.]) {
+            if !matches!(
+                self.prev_token_kind_including_ws,
+                T![nl] | T![ws] | T![:] | T!['('] | T![-]
+            ) && matches!(current_token.kind, T![.])
+            {
                 let repacement_token = Token {
                     kind: T![_.],
                     span: current_token.span,
@@ -415,7 +419,7 @@ Const a = 1			' some info
     }
 
     #[test]
-    fn test_while_single_line(){
+    fn test_while_single_line() {
         let input = r#"while skipIdx = skipIdx2:skipIdx2=Int(Rnd*6):wend"#;
         let mut parser = Parser::new(input);
         let items = parser.file();
@@ -427,22 +431,20 @@ Const a = 1			' some info
                     lhs: Box::new(Expr::ident("skipIdx")),
                     rhs: Box::new(Expr::ident("skipIdx2")),
                 }),
-                body: vec![
-                    Stmt::Assignment {
-                        full_ident: FullIdent::ident("skipIdx2"),
-                        value: Box::new(Expr::IdentFnSubCall(FullIdent {
-                            base: IdentBase::Complete(IdentPart {
-                                name: "Int".to_string(),
-                                array_indices: vec![vec![Some(Expr::InfixOp {
-                                    op: T![*],
-                                    lhs: Box::new(Expr::IdentFnSubCall(FullIdent::ident("Rnd"))),
-                                    rhs: Box::new(Expr::int(6)),
-                                }),],],
-                            }),
-                            property_accesses: vec![],
-                        })),
-                    },
-                ],
+                body: vec![Stmt::Assignment {
+                    full_ident: FullIdent::ident("skipIdx2"),
+                    value: Box::new(Expr::IdentFnSubCall(FullIdent {
+                        base: IdentBase::Complete(IdentPart {
+                            name: "Int".to_string(),
+                            array_indices: vec![vec![Some(Expr::InfixOp {
+                                op: T![*],
+                                lhs: Box::new(Expr::IdentFnSubCall(FullIdent::ident("Rnd"))),
+                                rhs: Box::new(Expr::int(6)),
+                            }),],],
+                        }),
+                        property_accesses: vec![],
+                    })),
+                },],
             }),]
         );
     }
@@ -874,10 +876,16 @@ Const a = 1			' some info
         let input = "Option Explicit : Randomize";
         let mut parser = Parser::new(input);
         let all = parser.file();
-        assert_eq!(all, vec![Item::OptionExplicit, Item::Statement(Stmt::SubCall{
-            fn_name: FullIdent::ident("Randomize"),
-            args: vec![],
-        }),]);
+        assert_eq!(
+            all,
+            vec![
+                Item::OptionExplicit,
+                Item::Statement(Stmt::SubCall {
+                    fn_name: FullIdent::ident("Randomize"),
+                    args: vec![],
+                }),
+            ]
+        );
     }
 
     #[test]

@@ -1075,7 +1075,7 @@ where
             IdentBase::Partial(self.ident_part())
         } else if self.at(T![_.]) {
             // Eg an expression at the start of a line will not match the T![.]
-            // because we use the inverse logic in that T![.] actually requires whitespace to be 
+            // because we use the inverse logic in that T![.] actually requires whitespace to be
             // matched.
             self.consume(T![_.]);
             IdentBase::Partial(self.ident_part())
