@@ -246,6 +246,7 @@ impl Display for FullIdent {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Literal(Lit),
+    Ident(String),
     /// An identifier, identifier with array access, sub or function call
     /// This grammar is ambiguous, so will need to be resolved at runtime
     /// TODO we can probably make a different type for
@@ -276,7 +277,7 @@ pub enum Expr {
     //     expr: Box<Expr>,
     // }
     New(String),
-    FnCall {
+    FnApplication {
         callee: Box<Expr>,
         args: Vec<Expr>,
     },
@@ -287,10 +288,14 @@ pub enum Expr {
 }
 
 impl Expr {
-    pub fn ident(name: impl Into<String>) -> Self {
+    pub fn ident2(name: impl Into<String>) -> Self {
         Expr::IdentFnSubCall(FullIdent::ident(name))
     }
 
+    pub fn ident(name: impl Into<String>) -> Self {
+        Expr::Ident(name.into())
+    }
+    
     pub fn int(i: isize) -> Self {
         Expr::Literal(Lit::Int(i))
     }
@@ -548,6 +553,7 @@ impl fmt::Display for Expr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Expr::Literal(lit) => write!(f, "{}", lit),
+            Expr::Ident(ident) => write!(f, "{}", ident),
             Expr::IdentFnSubCall(ident) => {
                 write!(f, "{}", ident)
             }
@@ -570,10 +576,15 @@ impl fmt::Display for Expr {
             // Expr::PostfixOp { op, expr } =>
             //     write!(f, "({} {})", expr, op),
             Expr::New(name) => write!(f, "New {}", name),
-            Expr::FnCall { callee, args } => {
+            Expr::FnApplication { callee, args } => {
                 write!(f, "{}(", callee)?;
-                for arg in args {
-                    write!(f, "{},", arg)?;
+                let len = args.len();
+                for (i, arg) in args.iter().enumerate() {
+                    if i != len - 1 {
+                        write!(f, "{}, ", arg)?;
+                    } else {
+                        write!(f, "{}", arg)?;
+                    }
                 }
                 write!(f, ")")
             }

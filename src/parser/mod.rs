@@ -282,13 +282,10 @@ Const a = 1			' some info
         let expr = parse("bar (  x, 2)");
         assert_eq!(
             expr,
-            Expr::IdentFnSubCall(FullIdent {
-                base: IdentBase::Complete(IdentPart {
-                    name: "bar".to_string(),
-                    array_indices: vec![vec![Some(Expr::ident("x")), Some(Expr::int(2)),]],
-                }),
-                property_accesses: vec![],
-            },)
+            Expr::FnApplication {
+                callee: Box::new(Expr::ident("bar")),
+                args: vec![Expr::ident("x"), Expr::int(2)],
+            }
         );
         let expr = parse("Not is_visible");
         assert_eq!(
@@ -334,30 +331,24 @@ Const a = 1			' some info
         let expr = parse("min ( test + 4 , sin(2*PI ))");
         assert_eq!(
             expr,
-            Expr::IdentFnSubCall(FullIdent {
-                base: IdentBase::Complete(IdentPart {
-                    name: "min".to_string(),
-                    array_indices: vec![vec![
-                        Some(Expr::InfixOp {
-                            op: T![+],
-                            lhs: Box::new(Expr::ident("test")),
-                            rhs: Box::new(Expr::int(4)),
-                        }),
-                        Some(Expr::IdentFnSubCall(FullIdent {
-                            base: IdentBase::Complete(IdentPart {
-                                name: "sin".to_string(),
-                                array_indices: vec![vec![Some(Expr::InfixOp {
-                                    op: T![*],
-                                    lhs: Box::new(Expr::int(2)),
-                                    rhs: Box::new(Expr::ident("PI")),
-                                }),],],
-                            }),
-                            property_accesses: vec![],
-                        })),
-                    ],],
-                }),
-                property_accesses: vec![],
-            })
+            Expr::FnApplication {
+                callee: Box::new(Expr::ident("min")),
+                args: vec![
+                    Expr::InfixOp {
+                        op: T![+],
+                        lhs: Box::new(Expr::ident("test")),
+                        rhs: Box::new(Expr::int(4)),
+                    },
+                    Expr::FnApplication {
+                        callee: Box::new(Expr::ident("sin")),
+                        args: vec![Expr::InfixOp {
+                            op: T![*],
+                            lhs: Box::new(Expr::int(2)),
+                            rhs: Box::new(Expr::ident("PI")),
+                        }],
+                    },
+                ],
+            }
         );
         assert_eq!(expr.to_string(), "min((test + 4), sin((2 * PI)))");
     }
@@ -433,17 +424,14 @@ Const a = 1			' some info
                 }),
                 body: vec![Stmt::Assignment {
                     full_ident: FullIdent::ident("skipIdx2"),
-                    value: Box::new(Expr::IdentFnSubCall(FullIdent {
-                        base: IdentBase::Complete(IdentPart {
-                            name: "Int".to_string(),
-                            array_indices: vec![vec![Some(Expr::InfixOp {
-                                op: T![*],
-                                lhs: Box::new(Expr::IdentFnSubCall(FullIdent::ident("Rnd"))),
-                                rhs: Box::new(Expr::int(6)),
-                            }),],],
-                        }),
-                        property_accesses: vec![],
-                    })),
+                    value: Box::new(Expr::FnApplication {
+                        callee: Box::new(Expr::ident("Int")),
+                        args: vec![Expr::InfixOp {
+                            op: T![*],
+                            lhs: Box::new(Expr::ident("Rnd")),
+                            rhs: Box::new(Expr::int(6)),
+                        }],
+                    }),
                 },],
             }),]
         );
@@ -1109,13 +1097,10 @@ Const a = 1			' some info
                     }),
                     body: vec![Stmt::Assignment {
                         full_ident: FullIdent::ident("LutValue"),
-                        value: Box::new(Expr::IdentFnSubCall(FullIdent {
-                            base: IdentBase::Complete(IdentPart {
-                                name: "CDbl".to_string(),
-                                array_indices: vec![vec![Some(Expr::ident("x"))]],
-                            }),
-                            property_accesses: vec![],
-                        })),
+                        value: Box::new(Expr::FnApplication {
+                            callee: Box::new(Expr::ident("CDbl")),
+                            args: vec![Expr::ident("x")],
+                        }),
                     }],
                     elseif_statements: vec![],
                     else_stmt: Some(vec![Stmt::Assignment {
@@ -1536,7 +1521,7 @@ Const a = 1			' some info
             items,
             vec![Item::Statement(Stmt::Set {
                 var: FullIdent::ident("DT1"),
-                rhs: SetRhs::Expr(Box::new(Expr::FnCall {
+                rhs: SetRhs::Expr(Box::new(Expr::FnApplication {
                     callee: Box::new(Expr::new("DropTarget")),
                     args: vec![Expr::int(1), Expr::int(0), Expr::Literal(Lit::Bool(false)),],
                 })),
@@ -1749,10 +1734,10 @@ Const a = 1			' some info
                 },
                 value: Box::new(Expr::InfixOp {
                     op: T![-],
-                    lhs: Box::new(Expr::IdentFnSubCall(FullIdent {
-                        base: IdentBase::ident("foo"),
-                        property_accesses: vec![IdentPart::ident("b")],
-                    })),
+                    lhs: Box::new(Expr::PropertyAccess {
+                        base: Box::new(Expr::ident("foo")),
+                        property: "b".to_string(),
+                    }),
                     rhs: Box::new(Expr::Literal(Lit::Float(120.5))),
                 }),
             })]
@@ -2395,17 +2380,14 @@ Const a = 1			' some info
                 full_ident: FullIdent::ident("x"),
                 value: Box::new(Expr::InfixOp {
                     op: T![*],
-                    lhs: Box::new(Expr::IdentFnSubCall(FullIdent {
-                        base: IdentBase::Complete(IdentPart {
-                            name: "AddScore".to_string(),
-                            array_indices: vec![vec![Some(Expr::InfixOp {
-                                op: T![+],
-                                lhs: Box::new(Expr::ident("x")),
-                                rhs: Box::new(Expr::ident("y")),
-                            })],],
-                        }),
-                        property_accesses: vec![],
-                    })),
+                    lhs: Box::new(Expr::FnApplication {
+                        callee: Box::new(Expr::ident("AddScore")),
+                        args: vec![Expr::InfixOp {
+                            op: T![+],
+                            lhs: Box::new(Expr::ident("x")),
+                            rhs: Box::new(Expr::ident("y")),
+                        }],
+                    }),
                     rhs: Box::new(Expr::ident("z")),
                 }),
             },

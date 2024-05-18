@@ -71,7 +71,7 @@ where
             // highest binding power
             if op == T!['('] {
                 let args = self.parenthesized_arguments();
-                lhs = Expr::FnCall {
+                lhs = Expr::FnApplication {
                     callee: Box::new(lhs),
                     args,
                 };
@@ -227,8 +227,10 @@ where
             | T![step]
             | T![default]
             | T![set] => {
-                let full_ident = self.ident_deep();
-                Expr::IdentFnSubCall(full_ident)
+                //let full_ident = self.ident_deep();
+                //Expr::IdentFnSubCall(full_ident)
+                let ident = self.identifier("expression identifier");
+                Expr::ident(ident)
             }
             T![new] => {
                 self.consume(T![new]);
@@ -351,7 +353,7 @@ impl Operator for TokenKind {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::parser::ast::Expr::Literal;
+    use crate::parser::ast::Expr::{Literal, PropertyAccess};
     use crate::parser::ast::{FullIdent, IdentBase, IdentPart};
     use pretty_assertions::assert_eq;
 
@@ -402,7 +404,7 @@ mod test {
             expr,
             Expr::InfixOp {
                 op: T![and],
-                lhs: Box::new(Expr::IdentFnSubCall(FullIdent::ident("col"))),
+                lhs: Box::new(Expr::ident("col")),
                 rhs: Box::new(Expr::int(0xFF)),
             }
         );
@@ -417,10 +419,7 @@ mod test {
             expr,
             Expr::InfixOp {
                 op: T![is],
-                lhs: Box::new(Expr::IdentFnSubCall(FullIdent {
-                    base: IdentBase::ident("varValue"),
-                    property_accesses: Vec::new(),
-                })),
+                lhs: Box::new(Expr::ident("varValue")),
                 rhs: Box::new(Literal(Lit::Nothing)),
             }
         );
@@ -437,10 +436,7 @@ mod test {
                 op: T![not],
                 expr: Box::new(Expr::InfixOp {
                     op: T![is],
-                    lhs: Box::new(Expr::IdentFnSubCall(FullIdent {
-                        base: IdentBase::ident("varValue"),
-                        property_accesses: Vec::new(),
-                    })),
+                    lhs: Box::new(Expr::ident("varValue")),
                     rhs: Box::new(Literal(Lit::Nothing)),
                 }),
             }
@@ -456,14 +452,8 @@ mod test {
             expr,
             Expr::InfixOp {
                 op: T![=],
-                lhs: Box::new(Expr::IdentFnSubCall(FullIdent {
-                    base: IdentBase::ident("varValue"),
-                    property_accesses: Vec::new(),
-                })),
-                rhs: Box::new(Expr::IdentFnSubCall(FullIdent {
-                    base: IdentBase::ident("varValue2"),
-                    property_accesses: Vec::new(),
-                })),
+                lhs: Box::new(Expr::ident("varValue")),
+                rhs: Box::new(Expr::ident("varValue2")),
             }
         );
     }
@@ -482,7 +472,7 @@ mod test {
                     lhs: Box::new(Literal(Lit::str("Hello"))),
                     rhs: Box::new(Literal(Lit::str(" "))),
                 }),
-                rhs: Box::new(Expr::IdentFnSubCall(FullIdent::ident("name"))),
+                rhs: Box::new(Expr::ident("name")),
             }
         );
     }
@@ -496,10 +486,10 @@ mod test {
             expr,
             Expr::InfixOp {
                 op: T![=],
-                lhs: Box::new(Expr::IdentFnSubCall(FullIdent {
-                    base: IdentBase::me(),
-                    property_accesses: vec![IdentPart::ident("Name")],
-                })),
+                lhs: Box::new(PropertyAccess {
+                    base: Box::new(Expr::ident("Me")),
+                    property: "Name".to_string(),
+                }),
                 rhs: Box::new(Literal(Lit::str("John"))),
             }
         );
@@ -514,7 +504,7 @@ mod test {
             expr,
             Expr::InfixOp {
                 op: T![&],
-                lhs: Box::new(Expr::IdentFnSubCall(FullIdent::ident("test"))),
+                lhs: Box::new(Expr::ident("test")),
                 rhs: Box::new(Literal(Lit::str("Hello"))),
             }
         );
@@ -528,7 +518,7 @@ mod test {
         let expr = parser.expression();
         assert_eq!(
             expr,
-            Expr::FnCall {
+            Expr::FnApplication {
                 callee: Box::new(Expr::new("Foo")),
                 args: vec![Expr::int(1)]
             }
@@ -546,7 +536,7 @@ mod test {
             Expr::InfixOp {
                 op: T![=],
                 lhs: Box::new(Expr::PropertyAccess {
-                    base: Box::new(Expr::IdentFnSubCall(FullIdent::ident("foo"))),
+                    base: Box::new(Expr::ident("foo")),
                     property: "enabled".to_string(),
                 }),
                 rhs: Box::new(Literal(Lit::Bool(false))),
