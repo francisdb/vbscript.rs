@@ -37,7 +37,7 @@ for repo in "${repos[@]}"; do
       cd ..
     else
       echo "Cloning $dir"
-      git clone --no-checkout "$url" "$dir"
+      git clone --depth 1 "$url" "$dir"
     fi
   fi
 done
