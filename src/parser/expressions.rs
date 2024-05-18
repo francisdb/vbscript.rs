@@ -281,26 +281,6 @@ where
         };
         arguments
     }
-
-    pub(crate) fn parenthesized_optional_arguments(&mut self) -> Vec<Option<Expr>> {
-        let mut arguments = Vec::new();
-        if self.at(T!['(']) {
-            self.consume(T!['(']);
-            while !self.at(T![')']) {
-                let expr = if self.at(T![,]) {
-                    None
-                } else {
-                    Some(self.expression())
-                };
-                arguments.push(expr);
-                if self.at(T![,]) {
-                    self.consume(T![,]);
-                }
-            }
-            self.consume(T![')']);
-        };
-        arguments
-    }
 }
 
 trait Operator {
@@ -354,7 +334,6 @@ impl Operator for TokenKind {
 mod test {
     use super::*;
     use crate::parser::ast::Expr::{Literal, PropertyAccess};
-    use crate::parser::ast::{FullIdent, IdentBase, IdentPart};
     use pretty_assertions::assert_eq;
 
     #[test]

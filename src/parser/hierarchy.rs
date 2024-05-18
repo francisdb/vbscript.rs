@@ -1019,15 +1019,6 @@ where
         }
     }
 
-    fn multi_parenthesized_arguments(&mut self) -> Vec<Vec<Option<Expr>>> {
-        let mut arguments = Vec::new();
-        while self.at(T!['(']) {
-            let group = self.parenthesized_optional_arguments();
-            arguments.push(group);
-        }
-        arguments
-    }
-
     fn optional_parenthesized_property_arguments(&mut self) -> Vec<(String, ArgumentType)> {
         let mut property_arguments = Vec::new();
         if self.at(T!['(']) {
