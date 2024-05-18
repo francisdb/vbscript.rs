@@ -427,9 +427,14 @@ where
             // We might have to add more here.
             // For now we have only encountered keywords `property`, `option` and `stop`
             // Probably the `unused` keyword will also be added here
-            T![ident] | T![property] | T![stop] | T![option] | T![step] | T![default] | T![set] | T![me] => {
-                self.text(&ident).to_string()
-            }
+            T![ident]
+            | T![property]
+            | T![stop]
+            | T![option]
+            | T![step]
+            | T![default]
+            | T![set]
+            | T![me] => self.text(&ident).to_string(),
             _ => panic!(
                 "{}:{} Expected identifier as {}, but found `{}`",
                 ident.line, ident.column, item_type, ident.kind
@@ -1051,7 +1056,7 @@ where
         // example input: `foo` or `foo(1)` or `foo(1, 2)`
         let name = self.identifier("identifier");
 
-       // let array_indices = self.multi_parenthesized_arguments();
+        // let array_indices = self.multi_parenthesized_arguments();
         let array_indices = vec![];
         IdentPart {
             name,

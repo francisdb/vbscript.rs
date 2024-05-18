@@ -295,7 +295,7 @@ impl Expr {
     pub fn ident(name: impl Into<String>) -> Self {
         Expr::Ident(name.into())
     }
-    
+
     pub fn int(i: isize) -> Self {
         Expr::Literal(Lit::Int(i))
     }
