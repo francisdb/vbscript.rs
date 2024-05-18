@@ -1581,20 +1581,14 @@ Const a = 1			' some info
                         op: T![+],
                         lhs: Box::new(Expr::InfixOp {
                             op: T![+],
-                            lhs: Box::new(Expr::IdentFnSubCall(FullIdent {
-                                base: IdentBase::Complete(IdentPart {
-                                    name: "uBound".to_string(),
-                                    array_indices: vec![vec![Some(Expr::ident("aArray"))]],
-                                }),
-                                property_accesses: vec![],
-                            })),
-                            rhs: Box::new(Expr::IdentFnSubCall(FullIdent {
-                                base: IdentBase::Complete(IdentPart {
-                                    name: "uBound".to_string(),
-                                    array_indices: vec![vec![Some(Expr::ident("aInput"))]],
-                                }),
-                                property_accesses: vec![],
-                            })),
+                            lhs: Box::new(Expr::FnApplication {
+                                callee: Box::new(Expr::ident("uBound")),
+                                args: vec![Expr::ident("aArray")],
+                            }),
+                            rhs: Box::new(Expr::FnApplication {
+                                callee: Box::new(Expr::ident("uBound")),
+                                args: vec![Expr::ident("aInput")],
+                            }),
                         }),
                         rhs: Box::new(Expr::int(1)),
                     }]
