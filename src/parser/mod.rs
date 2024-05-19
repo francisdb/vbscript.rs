@@ -2286,7 +2286,7 @@ Const a = 1			' some info
     }
 
     #[test]
-    #[should_panic = "Cannot use parentheses when calling a Sub"]
+    #[should_panic = "0:13 Expected to consume `)`, but found `,`"]
     fn test_statement_no_parenthesis_when_calling_sub() {
         // compilation error: Cannot use parentheses when calling a Sub
         let input = "DoSomething(0,0)";
@@ -2294,7 +2294,7 @@ Const a = 1			' some info
     }
 
     #[test]
-    #[should_panic = "Cannot use parentheses when calling a Sub"]
+    #[should_panic = "0:11 Expected to consume `)`, but found `,`"]
     fn test_statement_no_parenthesis_when_calling_deep_sub() {
         // compilation error: Cannot use parentheses when calling a Sub
         let input = "SomeArray(1,2).DoSomething(0,0,3)";
@@ -2302,8 +2302,8 @@ Const a = 1			' some info
     }
 
     #[test]
-    #[should_panic = "Cannot use parentheses when calling a Sub"]
-    fn test_statement_no_parenthesis_when_calling_sub2() {
+    #[should_panic = "0:11 Expected to consume `)`, but found `,`"]
+    fn test_statement_no_parenthesis_when_calling_sub_and_invalid_statement() {
         // compilation error: Cannot use parentheses when calling a Sub
         let input = "something(0,0) + 1";
         Parser::new(input).statement(true);
