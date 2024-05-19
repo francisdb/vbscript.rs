@@ -1025,8 +1025,6 @@ static EXCLUDED_FILES: &[&str] = &[
     "sverrewl-vpxtable-scripts/Theatre of magic VPX NZ-TT 1.0.vbs",
     // Uses `If ... End If` without Then TODO check if this is valid
     "sverrewl-vpxtable-scripts/Bally Roller Derby 2.0.vbs",
-    // see https://github.com/vpinball/vpinball/pull/1724
-    "vpinball/scripts/UltraDMD_Options.vbs",
 ];
 
 /// It tries to tokenize all `.vbs` files going one level lower from the root of the project.

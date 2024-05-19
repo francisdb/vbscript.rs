@@ -210,36 +210,23 @@ impl Display for IdentBase {
 /// An identifier with optional property accesses
 /// eg `a.b.c`, `a.b(1).c`, `a.b(1)(2).c` or `a.b(1,2).c(3)`
 ///
-/// note: Contructed like this because at least one identifier is required
+/// Contains a restricted expression that does not allow all operators.
 #[derive(Debug, Clone, PartialEq)]
-pub struct FullIdent {
-    pub base: IdentBase,
-    pub property_accesses: Vec<IdentPart>,
-}
+pub struct FullIdent(pub Box<Expr>);
 
 impl FullIdent {
     pub fn ident(name: impl Into<String>) -> Self {
-        FullIdent {
-            base: IdentBase::ident(name),
-            property_accesses: Vec::new(),
-        }
+        FullIdent(Box::new(Expr::ident(name)))
     }
 
-    pub fn partial(name: impl Into<String>) -> Self {
-        FullIdent {
-            base: IdentBase::partial(name),
-            property_accesses: Vec::new(),
-        }
+    pub fn new(expr: Expr) -> Self {
+        FullIdent(Box::new(expr))
     }
 }
 
 impl Display for FullIdent {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.base)?;
-        for prop in &self.property_accesses {
-            write!(f, ".{}", prop)?;
-        }
-        Ok(())
+        write!(f, "{}", self)
     }
 }
 
@@ -281,10 +268,16 @@ pub enum Expr {
         callee: Box<Expr>,
         args: Vec<Expr>,
     },
+    WithScoped,
     PropertyAccess {
         base: Box<Expr>,
         property: String,
     },
+}
+
+enum PropertyAccess2Base {
+    Relative,
+    Absolute,
 }
 
 impl Expr {
@@ -306,6 +299,20 @@ impl Expr {
 
     pub fn new(name: impl Into<String>) -> Self {
         Expr::New(name.into())
+    }
+
+    pub fn property_access(base: Expr, property: impl Into<String>) -> Self {
+        Expr::PropertyAccess {
+            base: Box::new(base),
+            property: property.into(),
+        }
+    }
+
+    pub fn fn_application(callee: Expr, args: Vec<Expr>) -> Self {
+        Expr::FnApplication {
+            callee: Box::new(callee),
+            args,
+        }
     }
 }
 
@@ -554,6 +561,7 @@ impl fmt::Display for Expr {
         match self {
             Expr::Literal(lit) => write!(f, "{}", lit),
             Expr::Ident(ident) => write!(f, "{}", ident),
+            Expr::WithScoped => write!(f, "."),
             Expr::IdentFnSubCall(ident) => {
                 write!(f, "{}", ident)
             }

@@ -532,37 +532,38 @@ Const a = 1			' some info
         let input = "For x = 1 To PlayerMode(currentplayer)+1 : Blink(x,1)=1 : Next";
         let mut parser = Parser::new(input);
         let stmt = parser.statement(true);
-        assert_eq!(
-            stmt,
-            Stmt::ForStmt {
-                counter: "x".to_string(),
-                start: Box::new(Expr::int(1)),
-                end: Box::new(Expr::InfixOp {
-                    op: T![+],
-                    lhs: Box::new(Expr::IdentFnSubCall(FullIdent {
-                        base: IdentBase::Complete(IdentPart {
-                            name: "PlayerMode".to_string(),
-                            array_indices: vec![vec![Some(Expr::IdentFnSubCall(
-                                FullIdent::ident("currentplayer")
-                            ))]],
-                        }),
-                        property_accesses: vec![],
-                    })),
-                    rhs: Box::new(Expr::int(1)),
-                }),
-                step: None,
-                body: vec![Stmt::Assignment {
-                    full_ident: FullIdent {
-                        base: IdentBase::Complete(IdentPart {
-                            name: "Blink".to_string(),
-                            array_indices: vec![vec![Some(Expr::ident("x")), Some(Expr::int(1))]],
-                        }),
-                        property_accesses: vec![],
-                    },
-                    value: Box::new(Expr::int(1)),
-                },],
-            }
-        );
+        // assert_eq!(
+        //     stmt,
+        //     Stmt::ForStmt {
+        //         counter: "x".to_string(),
+        //         start: Box::new(Expr::int(1)),
+        //         end: Box::new(Expr::InfixOp {
+        //             op: T![+],
+        //             lhs: Box::new(Expr::IdentFnSubCall(FullIdent {
+        //                 base: IdentBase::Complete(IdentPart {
+        //                     name: "PlayerMode".to_string(),
+        //                     array_indices: vec![vec![Some(Expr::IdentFnSubCall(
+        //                         FullIdent::ident("currentplayer")
+        //                     ))]],
+        //                 }),
+        //                 property_accesses: vec![],
+        //             })),
+        //             rhs: Box::new(Expr::int(1)),
+        //         }),
+        //         step: None,
+        //         body: vec![Stmt::Assignment {
+        //             full_ident: FullIdent {
+        //                 base: IdentBase::Complete(IdentPart {
+        //                     name: "Blink".to_string(),
+        //                     array_indices: vec![vec![Some(Expr::ident("x")), Some(Expr::int(1))]],
+        //                 }),
+        //                 property_accesses: vec![],
+        //             },
+        //             value: Box::new(Expr::int(1)),
+        //         },],
+        //     }
+        // );
+        todo!("Fix this test")
     }
 
     #[test]
@@ -580,10 +581,10 @@ Const a = 1			' some info
                 element: "dog".to_string(),
                 group: Box::new(Expr::ident("dogs")),
                 body: vec![Stmt::Assignment {
-                    full_ident: FullIdent {
-                        base: IdentBase::ident("dog"),
-                        property_accesses: vec![IdentPart::ident("visible")],
-                    },
+                    full_ident: FullIdent(Box::new(Expr::PropertyAccess {
+                        base: Box::new(Expr::ident("dog")),
+                        property: "visible".to_string(),
+                    })),
                     value: Box::new(Expr::Literal(Lit::Bool(true))),
                 }],
             }
@@ -604,17 +605,15 @@ Const a = 1			' some info
                 group: Box::new(Expr::ident("dogs")),
                 body: vec![
                     Stmt::Assignment {
-                        full_ident: FullIdent {
-                            base: IdentBase::ident("dog"),
-                            property_accesses: vec![IdentPart::ident("volume")],
-                        },
+                        full_ident: FullIdent::new(
+                            Expr::property_access(Expr::ident("dog"), "volume"),
+                        ),
                         value: Box::new(Expr::int(0)),
                     },
                     Stmt::Assignment {
-                        full_ident: FullIdent {
-                            base: IdentBase::ident("dog"),
-                            property_accesses: vec![IdentPart::ident("visible")],
-                        },
+                        full_ident: FullIdent::new(
+                            Expr::property_access(Expr::ident("dog"), "visible"),
+                        ),
                         value: Box::new(Expr::Literal(Lit::Bool(true))),
                     },
                 ],
@@ -700,30 +699,31 @@ Const a = 1			' some info
         let input = "Sub Trigger003_hit : RampWireRight.x = 0.1 : Light030.state = 0 : End Sub";
         let mut parser = Parser::new(input);
         let stmt = parser.statement(true);
-        assert_eq!(
-            stmt,
-            Stmt::Sub {
-                visibility: Visibility::Default,
-                name: "Trigger003_hit".to_string(),
-                parameters: vec![],
-                body: vec![
-                    Stmt::Assignment {
-                        full_ident: FullIdent {
-                            base: IdentBase::ident("RampWireRight"),
-                            property_accesses: vec![IdentPart::ident("x")],
-                        },
-                        value: Box::new(Expr::Literal(Lit::Float(0.1))),
-                    },
-                    Stmt::Assignment {
-                        full_ident: FullIdent {
-                            base: IdentBase::ident("Light030"),
-                            property_accesses: vec![IdentPart::ident("state")],
-                        },
-                        value: Box::new(Expr::int(0)),
-                    },
-                ],
-            }
-        );
+        // assert_eq!(
+        //     stmt,
+        //     Stmt::Sub {
+        //         visibility: Visibility::Default,
+        //         name: "Trigger003_hit".to_string(),
+        //         parameters: vec![],
+        //         body: vec![
+        //             Stmt::Assignment {
+        //                 full_ident: FullIdent {
+        //                     base: IdentBase::ident("RampWireRight"),
+        //                     property_accesses: vec![IdentPart::ident("x")],
+        //                 },
+        //                 value: Box::new(Expr::Literal(Lit::Float(0.1))),
+        //             },
+        //             Stmt::Assignment {
+        //                 full_ident: FullIdent {
+        //                     base: IdentBase::ident("Light030"),
+        //                     property_accesses: vec![IdentPart::ident("state")],
+        //                 },
+        //                 value: Box::new(Expr::int(0)),
+        //             },
+        //         ],
+        //     }
+        // );
+        todo!("Fix this test")
     }
 
     #[test]
@@ -988,40 +988,41 @@ Const a = 1			' some info
         let input = r#"if VRRoom > 0 Then bbs006.state = x2 Else controller.B2SSetData 50,x2 : controller.B2SSetData 53,x2 : End If"#;
         let mut parser = Parser::new(input);
         let stmt = parser.statement(true);
-        assert_eq!(
-            stmt,
-            Stmt::IfStmt {
-                condition: Box::new(Expr::InfixOp {
-                    op: T![>],
-                    lhs: Box::new(Expr::ident("VRRoom")),
-                    rhs: Box::new(Expr::int(0)),
-                }),
-                body: vec![Stmt::Assignment {
-                    full_ident: FullIdent {
-                        base: IdentBase::ident("bbs006"),
-                        property_accesses: vec![IdentPart::ident("state")],
-                    },
-                    value: Box::new(Expr::ident("x2")),
-                }],
-                elseif_statements: vec![],
-                else_stmt: Some(vec![
-                    Stmt::SubCall {
-                        fn_name: FullIdent {
-                            base: IdentBase::ident("controller"),
-                            property_accesses: vec![IdentPart::ident("B2SSetData")],
-                        },
-                        args: vec![Some(Expr::int(50)), Some(Expr::ident("x2")),],
-                    },
-                    Stmt::SubCall {
-                        fn_name: FullIdent {
-                            base: IdentBase::ident("controller"),
-                            property_accesses: vec![IdentPart::ident("B2SSetData")],
-                        },
-                        args: vec![Some(Expr::int(53)), Some(Expr::ident("x2")),],
-                    },
-                ]),
-            }
-        );
+        // assert_eq!(
+        //     stmt,
+        //     Stmt::IfStmt {
+        //         condition: Box::new(Expr::InfixOp {
+        //             op: T![>],
+        //             lhs: Box::new(Expr::ident("VRRoom")),
+        //             rhs: Box::new(Expr::int(0)),
+        //         }),
+        //         body: vec![Stmt::Assignment {
+        //             full_ident: FullIdent {
+        //                 base: IdentBase::ident("bbs006"),
+        //                 property_accesses: vec![IdentPart::ident("state")],
+        //             },
+        //             value: Box::new(Expr::ident("x2")),
+        //         }],
+        //         elseif_statements: vec![],
+        //         else_stmt: Some(vec![
+        //             Stmt::SubCall {
+        //                 fn_name: FullIdent {
+        //                     base: IdentBase::ident("controller"),
+        //                     property_accesses: vec![IdentPart::ident("B2SSetData")],
+        //                 },
+        //                 args: vec![Some(Expr::int(50)), Some(Expr::ident("x2")),],
+        //             },
+        //             Stmt::SubCall {
+        //                 fn_name: FullIdent {
+        //                     base: IdentBase::ident("controller"),
+        //                     property_accesses: vec![IdentPart::ident("B2SSetData")],
+        //                 },
+        //                 args: vec![Some(Expr::int(53)), Some(Expr::ident("x2")),],
+        //             },
+        //         ]),
+        //     }
+        // );
+        todo!("Fix this test")
     }
 
     #[test]
@@ -1156,49 +1157,50 @@ Const a = 1			' some info
         let input = "If key = 1 Then foo.fire: If bar=1 then DoSomething() else DoSomethingElse()";
         let mut parser = Parser::new(input);
         let stmt = parser.statement(true);
-        assert_eq!(
-            stmt,
-            Stmt::IfStmt {
-                condition: Box::new(Expr::InfixOp {
-                    op: T![=],
-                    lhs: Box::new(Expr::ident("key")),
-                    rhs: Box::new(Expr::int(1)),
-                }),
-                body: vec![
-                    Stmt::SubCall {
-                        fn_name: FullIdent {
-                            base: IdentBase::ident("foo"),
-                            property_accesses: vec![IdentPart::ident("fire")],
-                        },
-                        args: vec![],
-                    },
-                    Stmt::IfStmt {
-                        condition: Box::new(Expr::InfixOp {
-                            op: T![=],
-                            lhs: Box::new(Expr::ident("bar")),
-                            rhs: Box::new(Expr::int(1)),
-                        }),
-                        body: vec![Stmt::SubCall {
-                            fn_name: FullIdent::ident("DoSomething"),
-                            args: vec![],
-                        }],
-                        elseif_statements: vec![],
-                        else_stmt: Some(vec![Stmt::SubCall {
-                            fn_name: FullIdent {
-                                base: IdentBase::Complete(IdentPart {
-                                    name: "DoSomethingElse".to_string(),
-                                    array_indices: vec![vec![]]
-                                },),
-                                property_accesses: vec![],
-                            },
-                            args: vec![],
-                        }]),
-                    }
-                ],
-                elseif_statements: vec![],
-                else_stmt: None,
-            }
-        );
+        // assert_eq!(
+        //     stmt,
+        //     Stmt::IfStmt {
+        //         condition: Box::new(Expr::InfixOp {
+        //             op: T![=],
+        //             lhs: Box::new(Expr::ident("key")),
+        //             rhs: Box::new(Expr::int(1)),
+        //         }),
+        //         body: vec![
+        //             Stmt::SubCall {
+        //                 fn_name: FullIdent {
+        //                     base: IdentBase::ident("foo"),
+        //                     property_accesses: vec![IdentPart::ident("fire")],
+        //                 },
+        //                 args: vec![],
+        //             },
+        //             Stmt::IfStmt {
+        //                 condition: Box::new(Expr::InfixOp {
+        //                     op: T![=],
+        //                     lhs: Box::new(Expr::ident("bar")),
+        //                     rhs: Box::new(Expr::int(1)),
+        //                 }),
+        //                 body: vec![Stmt::SubCall {
+        //                     fn_name: FullIdent::ident("DoSomething"),
+        //                     args: vec![],
+        //                 }],
+        //                 elseif_statements: vec![],
+        //                 else_stmt: Some(vec![Stmt::SubCall {
+        //                     fn_name: FullIdent {
+        //                         base: IdentBase::Complete(IdentPart {
+        //                             name: "DoSomethingElse".to_string(),
+        //                             array_indices: vec![vec![]]
+        //                         },),
+        //                         property_accesses: vec![],
+        //                     },
+        //                     args: vec![],
+        //                 }]),
+        //             }
+        //         ],
+        //         elseif_statements: vec![],
+        //         else_stmt: None,
+        //     }
+        // );
+        todo!("Fix this test")
     }
 
     #[test]
@@ -1476,25 +1478,26 @@ Const a = 1			' some info
         "#};
         let mut parser = Parser::new(input);
         let file = parser.file();
-        assert_eq!(
-            file,
-            vec![
-                Item::Statement(Stmt::Set {
-                    var: FullIdent::ident("foo"),
-                    rhs: SetRhs::ident("bar"),
-                }),
-                Item::Statement(Stmt::Set {
-                    var: FullIdent {
-                        base: IdentBase::Complete(IdentPart {
-                            name: "Obj".to_string(),
-                            array_indices: vec![vec![Some(Expr::ident("x"))]],
-                        }),
-                        property_accesses: vec![],
-                    },
-                    rhs: SetRhs::ident("NullFader"),
-                }),
-            ]
-        );
+        // assert_eq!(
+        //     file,
+        //     vec![
+        //         Item::Statement(Stmt::Set {
+        //             var: FullIdent::ident("foo"),
+        //             rhs: SetRhs::ident("bar"),
+        //         }),
+        //         Item::Statement(Stmt::Set {
+        //             var: FullIdent {
+        //                 base: IdentBase::Complete(IdentPart {
+        //                     name: "Obj".to_string(),
+        //                     array_indices: vec![vec![Some(Expr::ident("x"))]],
+        //                 }),
+        //                 property_accesses: vec![],
+        //             },
+        //             rhs: SetRhs::ident("NullFader"),
+        //         }),
+        //     ]
+        // );
+        todo!("Fix this test")
     }
 
     #[test]
@@ -1548,22 +1551,23 @@ Const a = 1			' some info
         let input = "Set lampz.obj(x) = 1";
         let mut parser = Parser::new(input);
         let items = parser.file();
-        assert_eq!(
-            items,
-            vec![Item::Statement(Stmt::Set {
-                var: FullIdent {
-                    base: IdentBase::Complete(IdentPart {
-                        name: "lampz".to_string(),
-                        array_indices: vec![],
-                    }),
-                    property_accesses: vec![IdentPart {
-                        name: "obj".to_string(),
-                        array_indices: vec![vec![Some(Expr::ident("x"))]],
-                    }],
-                },
-                rhs: SetRhs::Expr(Box::new(Expr::int(1))),
-            })]
-        );
+        // assert_eq!(
+        //     items,
+        //     vec![Item::Statement(Stmt::Set {
+        //         var: FullIdent {
+        //             base: IdentBase::Complete(IdentPart {
+        //                 name: "lampz".to_string(),
+        //                 array_indices: vec![],
+        //             }),
+        //             property_accesses: vec![IdentPart {
+        //                 name: "obj".to_string(),
+        //                 array_indices: vec![vec![Some(Expr::ident("x"))]],
+        //             }],
+        //         },
+        //         rhs: SetRhs::Expr(Box::new(Expr::int(1))),
+        //     })]
+        // );
+        todo!("Fix this test")
     }
 
     #[test]
@@ -1696,22 +1700,23 @@ Const a = 1			' some info
         let input = r#"objectArray(i).image = "test""#;
         let mut parser = Parser::new(input);
         let items = parser.file();
-        assert_eq!(
-            items,
-            vec![Item::Statement(Stmt::Assignment {
-                full_ident: FullIdent {
-                    base: IdentBase::Complete(IdentPart {
-                        name: "objectArray".to_string(),
-                        array_indices: vec![vec![Some(Expr::ident("i"))]],
-                    }),
-                    property_accesses: vec![IdentPart {
-                        name: "image".to_string(),
-                        array_indices: vec![],
-                    }],
-                },
-                value: Box::new(Expr::str("test")),
-            })]
-        );
+        // assert_eq!(
+        //     items,
+        //     vec![Item::Statement(Stmt::Assignment {
+        //         full_ident: FullIdent {
+        //             base: IdentBase::Complete(IdentPart {
+        //                 name: "objectArray".to_string(),
+        //                 array_indices: vec![vec![Some(Expr::ident("i"))]],
+        //             }),
+        //             property_accesses: vec![IdentPart {
+        //                 name: "image".to_string(),
+        //                 array_indices: vec![],
+        //             }],
+        //         },
+        //         value: Box::new(Expr::str("test")),
+        //     })]
+        // );
+        todo!("Fix this test")
     }
 
     #[test]
@@ -1719,23 +1724,24 @@ Const a = 1			' some info
         let input = "foo.a = foo.b-120.5";
         let mut parser = Parser::new(input);
         let items = parser.file();
-        assert_eq!(
-            items,
-            vec![Item::Statement(Stmt::Assignment {
-                full_ident: FullIdent {
-                    base: IdentBase::ident("foo"),
-                    property_accesses: vec![IdentPart::ident("a"),],
-                },
-                value: Box::new(Expr::InfixOp {
-                    op: T![-],
-                    lhs: Box::new(Expr::PropertyAccess {
-                        base: Box::new(Expr::ident("foo")),
-                        property: "b".to_string(),
-                    }),
-                    rhs: Box::new(Expr::Literal(Lit::Float(120.5))),
-                }),
-            })]
-        );
+        // assert_eq!(
+        //     items,
+        //     vec![Item::Statement(Stmt::Assignment {
+        //         full_ident: FullIdent {
+        //             base: IdentBase::ident("foo"),
+        //             property_accesses: vec![IdentPart::ident("a"),],
+        //         },
+        //         value: Box::new(Expr::InfixOp {
+        //             op: T![-],
+        //             lhs: Box::new(Expr::PropertyAccess {
+        //                 base: Box::new(Expr::ident("foo")),
+        //                 property: "b".to_string(),
+        //             }),
+        //             rhs: Box::new(Expr::Literal(Lit::Float(120.5))),
+        //         }),
+        //     })]
+        // );
+        todo!("Fix this test")
     }
 
     #[test]
@@ -1880,44 +1886,45 @@ Const a = 1			' some info
         "#};
         let mut parser = Parser::new(input);
         let items = parser.file();
-        assert_eq!(
-            items,
-            vec![Item::Statement(Stmt::SelectCase {
-                test_expr: Box::new(Expr::ident("keycode")),
-                cases: vec![
-                    Case {
-                        tests: vec![Expr::ident("keyA")],
-                        body: vec![
-                            Stmt::SubCall {
-                                fn_name: FullIdent::ident("MySub"),
-                                args: vec![Some(Expr::Literal(Lit::Bool(true)))],
-                            },
-                            Stmt::SubCall {
-                                fn_name: FullIdent::ident("OtherSub"),
-                                args: vec![Some(Expr::int(1))],
-                            }
-                        ],
-                    },
-                    Case {
-                        tests: vec![Expr::int(82),],
-                        body: vec![Stmt::Assignment {
-                            full_ident: FullIdent {
-                                base: IdentBase::Partial(IdentPart {
-                                    name: "Switch".to_string(),
-                                    array_indices: vec![vec![Some(Expr::ident("swCPUDiag"))],],
-                                }),
-                                property_accesses: vec![],
-                            },
-                            value: Box::new(Expr::ident("t")),
-                        }]
-                    },
-                ],
-                else_stmt: Some(vec![Stmt::SubCall {
-                    fn_name: FullIdent::ident("DoNothing"),
-                    args: vec![],
-                }]),
-            })]
-        );
+        // assert_eq!(
+        //     items,
+        //     vec![Item::Statement(Stmt::SelectCase {
+        //         test_expr: Box::new(Expr::ident("keycode")),
+        //         cases: vec![
+        //             Case {
+        //                 tests: vec![Expr::ident("keyA")],
+        //                 body: vec![
+        //                     Stmt::SubCall {
+        //                         fn_name: FullIdent::ident("MySub"),
+        //                         args: vec![Some(Expr::Literal(Lit::Bool(true)))],
+        //                     },
+        //                     Stmt::SubCall {
+        //                         fn_name: FullIdent::ident("OtherSub"),
+        //                         args: vec![Some(Expr::int(1))],
+        //                     }
+        //                 ],
+        //             },
+        //             Case {
+        //                 tests: vec![Expr::int(82),],
+        //                 body: vec![Stmt::Assignment {
+        //                     full_ident: FullIdent {
+        //                         base: IdentBase::Partial(IdentPart {
+        //                             name: "Switch".to_string(),
+        //                             array_indices: vec![vec![Some(Expr::ident("swCPUDiag"))],],
+        //                         }),
+        //                         property_accesses: vec![],
+        //                     },
+        //                     value: Box::new(Expr::ident("t")),
+        //                 }]
+        //             },
+        //         ],
+        //         else_stmt: Some(vec![Stmt::SubCall {
+        //             fn_name: FullIdent::ident("DoNothing"),
+        //             args: vec![],
+        //         }]),
+        //     })]
+        // );
+        todo!("Fix this test")
     }
 
     #[test]
@@ -1955,28 +1962,29 @@ Const a = 1			' some info
         "#};
         let mut parser = Parser::new(input);
         let stmt = parser.statement(true);
-        assert_eq!(
-            stmt,
-            Stmt::IfStmt {
-                condition: Box::new(Expr::PrefixOp {
-                    op: T![not],
-                    expr: Box::new(Expr::InfixOp {
-                        op: T![is],
-                        lhs: Box::new(Expr::ident("Controller")),
-                        rhs: Box::new(Expr::Literal(Lit::Nothing)),
-                    }),
-                }),
-                body: vec![Stmt::SubCall {
-                    fn_name: FullIdent {
-                        base: IdentBase::ident("Controller"),
-                        property_accesses: vec![IdentPart::ident("Run")],
-                    },
-                    args: vec![],
-                },],
-                elseif_statements: vec![],
-                else_stmt: None,
-            }
-        );
+        // assert_eq!(
+        //     stmt,
+        //     Stmt::IfStmt {
+        //         condition: Box::new(Expr::PrefixOp {
+        //             op: T![not],
+        //             expr: Box::new(Expr::InfixOp {
+        //                 op: T![is],
+        //                 lhs: Box::new(Expr::ident("Controller")),
+        //                 rhs: Box::new(Expr::Literal(Lit::Nothing)),
+        //             }),
+        //         }),
+        //         body: vec![Stmt::SubCall {
+        //             fn_name: FullIdent {
+        //                 base: IdentBase::ident("Controller"),
+        //                 property_accesses: vec![IdentPart::ident("Run")],
+        //             },
+        //             args: vec![],
+        //         },],
+        //         elseif_statements: vec![],
+        //         else_stmt: None,
+        //     }
+        // );
+        todo!("Fix this test")
     }
 
     #[test]
@@ -2143,32 +2151,33 @@ Const a = 1			' some info
         "#};
         let mut parser = Parser::new(input);
         let items = parser.file();
-        assert_eq!(
-            items,
-            vec![Item::Statement(Stmt::With {
-                object: FullIdent {
-                    base: IdentBase::ident("foo"),
-                    property_accesses: vec![IdentPart::ident("obj")],
-                },
-                body: vec![
-                    Stmt::Assignment {
-                        full_ident: FullIdent::partial("bar"),
-                        value: Box::new(Expr::int(1)),
-                    },
-                    Stmt::Assignment {
-                        full_ident: FullIdent {
-                            base: IdentBase::partial("baz"),
-                            property_accesses: vec![IdentPart::ident("z")],
-                        },
-                        value: Box::new(Expr::ident("x")),
-                    },
-                    Stmt::Assignment {
-                        full_ident: FullIdent::ident("x"),
-                        value: Box::new(Expr::IdentFnSubCall(FullIdent::partial("qux"))),
-                    },
-                ],
-            })]
-        );
+        // assert_eq!(
+        //     items,
+        //     vec![Item::Statement(Stmt::With {
+        //         object: FullIdent {
+        //             base: IdentBase::ident("foo"),
+        //             property_accesses: vec![IdentPart::ident("obj")],
+        //         },
+        //         body: vec![
+        //             Stmt::Assignment {
+        //                 full_ident: FullIdent::partial("bar"),
+        //                 value: Box::new(Expr::int(1)),
+        //             },
+        //             Stmt::Assignment {
+        //                 full_ident: FullIdent {
+        //                     base: IdentBase::partial("baz"),
+        //                     property_accesses: vec![IdentPart::ident("z")],
+        //                 },
+        //                 value: Box::new(Expr::ident("x")),
+        //             },
+        //             Stmt::Assignment {
+        //                 full_ident: FullIdent::ident("x"),
+        //                 value: Box::new(Expr::IdentFnSubCall(FullIdent::partial("qux"))),
+        //             },
+        //         ],
+        //     })]
+        // );
+        todo!("Fix this test")
     }
 
     #[test]
@@ -2198,19 +2207,20 @@ Const a = 1			' some info
         let input = "foo(1)(2) = 3";
         let mut parser = Parser::new(input);
         let stmt = parser.statement(true);
-        assert_eq!(
-            stmt,
-            Stmt::Assignment {
-                full_ident: FullIdent {
-                    base: IdentBase::Complete(IdentPart {
-                        name: "foo".to_string(),
-                        array_indices: vec![vec![Some(Expr::int(1))], vec![Some(Expr::int(2))]],
-                    }),
-                    property_accesses: vec![],
-                },
-                value: Box::new(Expr::int(3)),
-            }
-        );
+        // assert_eq!(
+        //     stmt,
+        //     Stmt::Assignment {
+        //         full_ident: FullIdent {
+        //             base: IdentBase::Complete(IdentPart {
+        //                 name: "foo".to_string(),
+        //                 array_indices: vec![vec![Some(Expr::int(1))], vec![Some(Expr::int(2))]],
+        //             }),
+        //             property_accesses: vec![],
+        //         },
+        //         value: Box::new(Expr::int(3)),
+        //     }
+        // );
+        todo!("Fix this test")
     }
 
     #[test]
@@ -2222,35 +2232,36 @@ Const a = 1			' some info
         "#};
         let mut parser = Parser::new(input);
         let items = parser.file();
-        assert_eq!(
-            items,
-            vec![
-                Item::Statement(Stmt::Call(FullIdent::ident("MyFunction"))),
-                Item::Statement(Stmt::Call(FullIdent {
-                    base: IdentBase::Complete(IdentPart {
-                        name: "MyOtherFunction".to_string(),
-                        array_indices: vec![vec![Some(Expr::int(1)), Some(Expr::int(2))],],
-                    }),
-                    property_accesses: vec![],
-                })),
-                Item::Statement(Stmt::Call(FullIdent {
-                    base: IdentBase::Complete(IdentPart {
-                        name: "mQue3".to_string(),
-                        array_indices: vec![
-                            vec![Some(Expr::ident("ii"))],
-                            vec![Some(Expr::IdentFnSubCall(FullIdent {
-                                base: IdentBase::Complete(IdentPart {
-                                    name: "mQue2".to_string(),
-                                    array_indices: vec![vec![Some(Expr::ident("ii"))]],
-                                }),
-                                property_accesses: vec![],
-                            }))],
-                        ],
-                    }),
-                    property_accesses: vec![],
-                })),
-            ]
-        );
+        // assert_eq!(
+        //     items,
+        //     vec![
+        //         Item::Statement(Stmt::Call(FullIdent::ident("MyFunction"))),
+        //         Item::Statement(Stmt::Call(FullIdent {
+        //             base: IdentBase::Complete(IdentPart {
+        //                 name: "MyOtherFunction".to_string(),
+        //                 array_indices: vec![vec![Some(Expr::int(1)), Some(Expr::int(2))],],
+        //             }),
+        //             property_accesses: vec![],
+        //         })),
+        //         Item::Statement(Stmt::Call(FullIdent {
+        //             base: IdentBase::Complete(IdentPart {
+        //                 name: "mQue3".to_string(),
+        //                 array_indices: vec![
+        //                     vec![Some(Expr::ident("ii"))],
+        //                     vec![Some(Expr::IdentFnSubCall(FullIdent {
+        //                         base: IdentBase::Complete(IdentPart {
+        //                             name: "mQue2".to_string(),
+        //                             array_indices: vec![vec![Some(Expr::ident("ii"))]],
+        //                         }),
+        //                         property_accesses: vec![],
+        //                     }))],
+        //                 ],
+        //             }),
+        //             property_accesses: vec![],
+        //         })),
+        //     ]
+        // );
+        todo!("Fix this test")
     }
     #[test]
     fn test_statement_ambiguity_accepted() {
@@ -2393,26 +2404,27 @@ Const a = 1			' some info
         let input = r#"MySub MyFn(0, , -1)"#;
         let mut parser = Parser::new(input);
         let stmt = parser.statement(true);
-        assert_eq!(
-            stmt,
-            Stmt::SubCall {
-                fn_name: FullIdent::ident("MySub"),
-                args: vec![Some(Expr::IdentFnSubCall(FullIdent {
-                    base: IdentBase::Complete(IdentPart {
-                        name: "MyFn".to_string(),
-                        array_indices: vec![vec![
-                            Some(Expr::int(0)),
-                            None,
-                            Some(Expr::PrefixOp {
-                                op: T![-],
-                                expr: Box::new(Expr::int(1)),
-                            })
-                        ],],
-                    }),
-                    property_accesses: vec![],
-                }))],
-            }
-        );
+        // assert_eq!(
+        //     stmt,
+        //     Stmt::SubCall {
+        //         fn_name: FullIdent::ident("MySub"),
+        //         args: vec![Some(Expr::IdentFnSubCall(FullIdent {
+        //             base: IdentBase::Complete(IdentPart {
+        //                 name: "MyFn".to_string(),
+        //                 array_indices: vec![vec![
+        //                     Some(Expr::int(0)),
+        //                     None,
+        //                     Some(Expr::PrefixOp {
+        //                         op: T![-],
+        //                         expr: Box::new(Expr::int(1)),
+        //                     })
+        //                 ],],
+        //             }),
+        //             property_accesses: vec![],
+        //         }))],
+        //     }
+        // );
+        todo!("Fix this test")
     }
 
     #[test]
