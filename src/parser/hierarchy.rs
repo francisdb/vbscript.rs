@@ -1062,7 +1062,7 @@ where
                 T![_.] => {
                     self.consume(T![_.]);
                     let property = self.identifier("property");
-                    lhs = Expr::PropertyAccess {
+                    lhs = Expr::MemberExpression {
                         base: Box::new(lhs),
                         property,
                     };
@@ -1070,7 +1070,7 @@ where
                 }
                 T!['('] => {
                     //self.consume(T!['(']);
-                    let args = self.parenthesized_arguments();
+                    let args = self.parenthesized_optional_arguments();
                     //self.consume(T![')']);
                     lhs = Expr::FnApplication {
                         callee: Box::new(lhs),
@@ -1110,7 +1110,7 @@ where
             T![.] => {
                 self.consume(T![.]);
                 let property = self.identifier("property");
-                Expr::PropertyAccess {
+                Expr::MemberExpression {
                     base: Box::new(WithScoped),
                     property,
                 }
@@ -1219,14 +1219,14 @@ mod test {
         assert_eq!(
             ident,
             FullIdent::new(
-                Expr::property_access(
+                Expr::member(
                     Expr::fn_application(
-                        Expr::fn_application(Expr::property_access(
+                        Expr::fn_application(Expr::member(
                             Expr::fn_application(
-                                Expr::property_access(
+                                Expr::member(
                                     Expr::fn_application(
-                                        Expr::property_access(
-                                            Expr::property_access(
+                                        Expr::member(
+                                            Expr::member(
                                                 Expr::ident("base"),
                                                 "prop",
                                             ),
@@ -1259,7 +1259,7 @@ mod test {
         assert_eq!(
             ident,
             FullIdent::new(
-                Expr::property_access(
+                Expr::member(
                     Expr::ident("obj"),
                     "prop"
                 )
@@ -1276,8 +1276,8 @@ mod test {
         assert_eq!(
             ident,
             FullIdent::new(
-                Expr::property_access(
-                    Expr::property_access(
+                Expr::member(
+                    Expr::member(
                         Expr::WithScoped,
                         "prop"
                     ),
@@ -1297,9 +1297,9 @@ mod test {
         assert_eq!(
             ident,
             FullIdent::new(
-                Expr::property_access(
-                    Expr::property_access(
-                        Expr::property_access(
+                Expr::member(
+                    Expr::member(
+                        Expr::member(
                             WithScoped,
                             "property"
                         ),

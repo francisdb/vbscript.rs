@@ -226,7 +226,7 @@ impl FullIdent {
 
 impl Display for FullIdent {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self)
+        write!(f, "{}", self.0)
     }
 }
 
@@ -266,18 +266,13 @@ pub enum Expr {
     New(String),
     FnApplication {
         callee: Box<Expr>,
-        args: Vec<Expr>,
+        args: Vec<Option<Expr>>,
     },
     WithScoped,
-    PropertyAccess {
+    MemberExpression {
         base: Box<Expr>,
         property: String,
     },
-}
-
-enum PropertyAccess2Base {
-    Relative,
-    Absolute,
 }
 
 impl Expr {
@@ -301,14 +296,15 @@ impl Expr {
         Expr::New(name.into())
     }
 
-    pub fn property_access(base: Expr, property: impl Into<String>) -> Self {
-        Expr::PropertyAccess {
+    pub fn member(base: Expr, property: impl Into<String>) -> Self {
+        Expr::MemberExpression {
             base: Box::new(base),
             property: property.into(),
         }
     }
 
     pub fn fn_application(callee: Expr, args: Vec<Expr>) -> Self {
+        let args = args.into_iter().map(|arg| Some(arg)).collect();
         Expr::FnApplication {
             callee: Box::new(callee),
             args,
@@ -588,15 +584,16 @@ impl fmt::Display for Expr {
                 write!(f, "{}(", callee)?;
                 let len = args.len();
                 for (i, arg) in args.iter().enumerate() {
-                    if i != len - 1 {
-                        write!(f, "{}, ", arg)?;
-                    } else {
+                    if let Some(arg) = arg {
                         write!(f, "{}", arg)?;
+                    }
+                    if i != len - 1 {
+                        write!(f, ", ")?;
                     }
                 }
                 write!(f, ")")
             }
-            Expr::PropertyAccess { base, property } => write!(f, "{}.{}", base, property),
+            Expr::MemberExpression { base, property } => write!(f, "{}.{}", base, property),
         }
     }
 }

@@ -70,7 +70,7 @@ where
 
             // highest binding power
             if op == T!['('] {
-                let args = self.parenthesized_arguments();
+                let args = self.parenthesized_optional_arguments();
                 lhs = Expr::FnApplication {
                     callee: Box::new(lhs),
                     args,
@@ -85,7 +85,7 @@ where
                 self.consume(T![_.]);
                 let ident = self.consume(T![ident]);
                 let property = self.text(&ident).to_string();
-                lhs = Expr::PropertyAccess {
+                lhs = Expr::MemberExpression {
                     base: Box::new(lhs),
                     property,
                 };
@@ -220,7 +220,6 @@ where
             //   we have seen these tokens being used as identifiers
             T![ident]
             | T![me]
-            | T![.]
             | T![property]
             | T![stop]
             | T![option]
@@ -231,6 +230,15 @@ where
                 //Expr::IdentFnSubCall(full_ident)
                 let ident = self.identifier("expression identifier");
                 Expr::ident(ident)
+            }
+            T![.] => {
+                self.consume(T![.]);
+                let ident = self.consume(T![ident]);
+                let property = self.text(&ident).to_string();
+                Expr::MemberExpression {
+                    base: Box::new(Expr::WithScoped),
+                    property,
+                }
             }
             T![new] => {
                 self.consume(T![new]);
@@ -272,6 +280,27 @@ where
             self.consume(T!['(']);
             while !self.at(T![')']) {
                 let expr = self.expression();
+                arguments.push(expr);
+                if self.at(T![,]) {
+                    self.consume(T![,]);
+                }
+            }
+            self.consume(T![')']);
+        };
+        arguments
+    }
+
+    pub(crate) fn parenthesized_optional_arguments(&mut self) -> Vec<Option<Expr>> {
+        let mut arguments = Vec::new();
+        if self.at(T!['(']) {
+            self.consume(T!['(']);
+            while !self.at(T![')']) {
+                // empty args are allowed
+                let expr = if self.at(T![,]) {
+                    None
+                } else {
+                    Some(self.expression())
+                };
                 arguments.push(expr);
                 if self.at(T![,]) {
                     self.consume(T![,]);
@@ -333,7 +362,7 @@ impl Operator for TokenKind {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::parser::ast::Expr::{Literal, PropertyAccess};
+    use crate::parser::ast::Expr::{Literal, MemberExpression};
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -465,7 +494,7 @@ mod test {
             expr,
             Expr::InfixOp {
                 op: T![=],
-                lhs: Box::new(PropertyAccess {
+                lhs: Box::new(MemberExpression {
                     base: Box::new(Expr::ident("Me")),
                     property: "Name".to_string(),
                 }),
@@ -497,10 +526,10 @@ mod test {
         let expr = parser.expression();
         assert_eq!(
             expr,
-            Expr::FnApplication {
-                callee: Box::new(Expr::new("Foo")),
-                args: vec![Expr::int(1)]
-            }
+            Expr::fn_application(
+                Expr::new("Foo"),
+                vec![Expr::int(1)]
+            )
         );
     }
 
@@ -514,7 +543,7 @@ mod test {
             expr,
             Expr::InfixOp {
                 op: T![=],
-                lhs: Box::new(Expr::PropertyAccess {
+                lhs: Box::new(Expr::MemberExpression {
                     base: Box::new(Expr::ident("foo")),
                     property: "enabled".to_string(),
                 }),
