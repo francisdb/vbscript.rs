@@ -210,42 +210,30 @@ impl Display for IdentBase {
 /// An identifier with optional property accesses
 /// eg `a.b.c`, `a.b(1).c`, `a.b(1)(2).c` or `a.b(1,2).c(3)`
 ///
-/// note: Contructed like this because at least one identifier is required
+/// Contains a restricted expression that does not allow all operators.
 #[derive(Debug, Clone, PartialEq)]
-pub struct FullIdent {
-    pub base: IdentBase,
-    pub property_accesses: Vec<IdentPart>,
-}
+pub struct FullIdent(pub Box<Expr>);
 
 impl FullIdent {
     pub fn ident(name: impl Into<String>) -> Self {
-        FullIdent {
-            base: IdentBase::ident(name),
-            property_accesses: Vec::new(),
-        }
+        FullIdent(Box::new(Expr::ident(name)))
     }
 
-    pub fn partial(name: impl Into<String>) -> Self {
-        FullIdent {
-            base: IdentBase::partial(name),
-            property_accesses: Vec::new(),
-        }
+    pub fn new(expr: Expr) -> Self {
+        FullIdent(Box::new(expr))
     }
 }
 
 impl Display for FullIdent {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.base)?;
-        for prop in &self.property_accesses {
-            write!(f, ".{}", prop)?;
-        }
-        Ok(())
+        write!(f, "{}", self.0)
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Literal(Lit),
+    Ident(String),
     /// An identifier, identifier with array access, sub or function call
     /// This grammar is ambiguous, so will need to be resolved at runtime
     /// TODO we can probably make a different type for
@@ -276,19 +264,24 @@ pub enum Expr {
     //     expr: Box<Expr>,
     // }
     New(String),
-    FnCall {
+    FnApplication {
         callee: Box<Expr>,
-        args: Vec<Expr>,
+        args: Vec<Option<Expr>>,
     },
-    PropertyAccess {
+    WithScoped,
+    MemberExpression {
         base: Box<Expr>,
         property: String,
     },
 }
 
 impl Expr {
-    pub fn ident(name: impl Into<String>) -> Self {
+    pub fn ident2(name: impl Into<String>) -> Self {
         Expr::IdentFnSubCall(FullIdent::ident(name))
+    }
+
+    pub fn ident(name: impl Into<String>) -> Self {
+        Expr::Ident(name.into())
     }
 
     pub fn int(i: isize) -> Self {
@@ -301,6 +294,21 @@ impl Expr {
 
     pub fn new(name: impl Into<String>) -> Self {
         Expr::New(name.into())
+    }
+
+    pub fn member(base: Expr, property: impl Into<String>) -> Self {
+        Expr::MemberExpression {
+            base: Box::new(base),
+            property: property.into(),
+        }
+    }
+
+    pub fn fn_application(callee: Expr, args: Vec<Expr>) -> Self {
+        let args = args.into_iter().map(Some).collect();
+        Expr::FnApplication {
+            callee: Box::new(callee),
+            args,
+        }
     }
 }
 
@@ -330,6 +338,9 @@ pub enum SetRhs {
 impl SetRhs {
     pub fn ident(name: impl Into<String>) -> Self {
         SetRhs::Expr(Box::new(Expr::ident(name)))
+    }
+    pub fn expr(expr: Expr) -> Self {
+        SetRhs::Expr(Box::new(expr))
     }
 }
 
@@ -536,6 +547,13 @@ impl Stmt {
     pub fn const_(var_name: impl Into<String>, value: Lit) -> Self {
         Stmt::Const(vec![(var_name.into(), value)])
     }
+
+    pub fn assignment(ident: FullIdent, value: Expr) -> Self {
+        Stmt::Assignment {
+            full_ident: ident,
+            value: Box::new(value),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -548,6 +566,8 @@ impl fmt::Display for Expr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Expr::Literal(lit) => write!(f, "{}", lit),
+            Expr::Ident(ident) => write!(f, "{}", ident),
+            Expr::WithScoped => write!(f, "."),
             Expr::IdentFnSubCall(ident) => {
                 write!(f, "{}", ident)
             }
@@ -570,14 +590,20 @@ impl fmt::Display for Expr {
             // Expr::PostfixOp { op, expr } =>
             //     write!(f, "({} {})", expr, op),
             Expr::New(name) => write!(f, "New {}", name),
-            Expr::FnCall { callee, args } => {
+            Expr::FnApplication { callee, args } => {
                 write!(f, "{}(", callee)?;
-                for arg in args {
-                    write!(f, "{},", arg)?;
+                let len = args.len();
+                for (i, arg) in args.iter().enumerate() {
+                    if let Some(arg) = arg {
+                        write!(f, "{}", arg)?;
+                    }
+                    if i != len - 1 {
+                        write!(f, ", ")?;
+                    }
                 }
                 write!(f, ")")
             }
-            Expr::PropertyAccess { base, property } => write!(f, "{}.{}", base, property),
+            Expr::MemberExpression { base, property } => write!(f, "{}.{}", base, property),
         }
     }
 }

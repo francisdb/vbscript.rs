@@ -70,8 +70,8 @@ where
 
             // highest binding power
             if op == T!['('] {
-                let args = self.parenthesized_arguments();
-                lhs = Expr::FnCall {
+                let args = self.parenthesized_optional_arguments();
+                lhs = Expr::FnApplication {
                     callee: Box::new(lhs),
                     args,
                 };
@@ -83,9 +83,8 @@ where
             // The property itself is allowed to be prefixed with whitespace.
             if op == T![_.] {
                 self.consume(T![_.]);
-                let ident = self.consume(T![ident]);
-                let property = self.text(&ident).to_string();
-                lhs = Expr::PropertyAccess {
+                let property = self.identifier("property name");
+                lhs = Expr::MemberExpression {
                     base: Box::new(lhs),
                     property,
                 };
@@ -220,15 +219,25 @@ where
             //   we have seen these tokens being used as identifiers
             T![ident]
             | T![me]
-            | T![.]
             | T![property]
             | T![stop]
             | T![option]
             | T![step]
             | T![default]
             | T![set] => {
-                let full_ident = self.ident_deep();
-                Expr::IdentFnSubCall(full_ident)
+                //let full_ident = self.ident_deep();
+                //Expr::IdentFnSubCall(full_ident)
+                let ident = self.identifier("expression identifier");
+                Expr::ident(ident)
+            }
+            T![.] => {
+                self.consume(T![.]);
+                let ident = self.consume(T![ident]);
+                let property = self.text(&ident).to_string();
+                Expr::MemberExpression {
+                    base: Box::new(Expr::WithScoped),
+                    property,
+                }
             }
             T![new] => {
                 self.consume(T![new]);
@@ -285,6 +294,7 @@ where
         if self.at(T!['(']) {
             self.consume(T!['(']);
             while !self.at(T![')']) {
+                // empty args are allowed
                 let expr = if self.at(T![,]) {
                     None
                 } else {
@@ -351,8 +361,7 @@ impl Operator for TokenKind {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::parser::ast::Expr::Literal;
-    use crate::parser::ast::{FullIdent, IdentBase, IdentPart};
+    use crate::parser::ast::Expr::{Literal, MemberExpression};
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -402,7 +411,7 @@ mod test {
             expr,
             Expr::InfixOp {
                 op: T![and],
-                lhs: Box::new(Expr::IdentFnSubCall(FullIdent::ident("col"))),
+                lhs: Box::new(Expr::ident("col")),
                 rhs: Box::new(Expr::int(0xFF)),
             }
         );
@@ -417,10 +426,7 @@ mod test {
             expr,
             Expr::InfixOp {
                 op: T![is],
-                lhs: Box::new(Expr::IdentFnSubCall(FullIdent {
-                    base: IdentBase::ident("varValue"),
-                    property_accesses: Vec::new(),
-                })),
+                lhs: Box::new(Expr::ident("varValue")),
                 rhs: Box::new(Literal(Lit::Nothing)),
             }
         );
@@ -437,10 +443,7 @@ mod test {
                 op: T![not],
                 expr: Box::new(Expr::InfixOp {
                     op: T![is],
-                    lhs: Box::new(Expr::IdentFnSubCall(FullIdent {
-                        base: IdentBase::ident("varValue"),
-                        property_accesses: Vec::new(),
-                    })),
+                    lhs: Box::new(Expr::ident("varValue")),
                     rhs: Box::new(Literal(Lit::Nothing)),
                 }),
             }
@@ -456,14 +459,8 @@ mod test {
             expr,
             Expr::InfixOp {
                 op: T![=],
-                lhs: Box::new(Expr::IdentFnSubCall(FullIdent {
-                    base: IdentBase::ident("varValue"),
-                    property_accesses: Vec::new(),
-                })),
-                rhs: Box::new(Expr::IdentFnSubCall(FullIdent {
-                    base: IdentBase::ident("varValue2"),
-                    property_accesses: Vec::new(),
-                })),
+                lhs: Box::new(Expr::ident("varValue")),
+                rhs: Box::new(Expr::ident("varValue2")),
             }
         );
     }
@@ -482,7 +479,7 @@ mod test {
                     lhs: Box::new(Literal(Lit::str("Hello"))),
                     rhs: Box::new(Literal(Lit::str(" "))),
                 }),
-                rhs: Box::new(Expr::IdentFnSubCall(FullIdent::ident("name"))),
+                rhs: Box::new(Expr::ident("name")),
             }
         );
     }
@@ -496,10 +493,10 @@ mod test {
             expr,
             Expr::InfixOp {
                 op: T![=],
-                lhs: Box::new(Expr::IdentFnSubCall(FullIdent {
-                    base: IdentBase::me(),
-                    property_accesses: vec![IdentPart::ident("Name")],
-                })),
+                lhs: Box::new(MemberExpression {
+                    base: Box::new(Expr::ident("Me")),
+                    property: "Name".to_string(),
+                }),
                 rhs: Box::new(Literal(Lit::str("John"))),
             }
         );
@@ -514,7 +511,7 @@ mod test {
             expr,
             Expr::InfixOp {
                 op: T![&],
-                lhs: Box::new(Expr::IdentFnSubCall(FullIdent::ident("test"))),
+                lhs: Box::new(Expr::ident("test")),
                 rhs: Box::new(Literal(Lit::str("Hello"))),
             }
         );
@@ -528,10 +525,7 @@ mod test {
         let expr = parser.expression();
         assert_eq!(
             expr,
-            Expr::FnCall {
-                callee: Box::new(Expr::new("Foo")),
-                args: vec![Expr::int(1)]
-            }
+            Expr::fn_application(Expr::new("Foo"), vec![Expr::int(1)])
         );
     }
 
@@ -545,8 +539,8 @@ mod test {
             expr,
             Expr::InfixOp {
                 op: T![=],
-                lhs: Box::new(Expr::PropertyAccess {
-                    base: Box::new(Expr::IdentFnSubCall(FullIdent::ident("foo"))),
+                lhs: Box::new(Expr::MemberExpression {
+                    base: Box::new(Expr::ident("foo")),
                     property: "enabled".to_string(),
                 }),
                 rhs: Box::new(Literal(Lit::Bool(false))),

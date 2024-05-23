@@ -1,8 +1,8 @@
 use crate::lexer::{Token, TokenKind};
+use crate::parser::ast::Expr::WithScoped;
 use crate::parser::ast::{
-    Argument, ArgumentType, Case, DoLoopCheck, DoLoopCondition, ErrorClause, Expr, FullIdent,
-    IdentBase, IdentPart, Item, MemberAccess, MemberDefinitions, PropertyType, PropertyVisibility,
-    SetRhs, Stmt, Visibility,
+    Argument, ArgumentType, Case, DoLoopCheck, DoLoopCondition, ErrorClause, Expr, FullIdent, Item,
+    MemberAccess, MemberDefinitions, PropertyType, PropertyVisibility, SetRhs, Stmt, Visibility,
 };
 use crate::parser::{ast, Parser};
 use crate::T;
@@ -427,9 +427,14 @@ where
             // We might have to add more here.
             // For now we have only encountered keywords `property`, `option` and `stop`
             // Probably the `unused` keyword will also be added here
-            T![ident] | T![property] | T![stop] | T![option] | T![step] | T![default] | T![set] => {
-                self.text(&ident).to_string()
-            }
+            T![ident]
+            | T![property]
+            | T![stop]
+            | T![option]
+            | T![step]
+            | T![default]
+            | T![set]
+            | T![me] => self.text(&ident).to_string(),
             _ => panic!(
                 "{}:{} Expected identifier as {}, but found `{}`",
                 ident.line, ident.column, item_type, ident.kind
@@ -536,14 +541,14 @@ where
                         args: Vec::new(),
                     }
                 } else {
+                    self.fail_if_using_empty_parentheses_when_calling_sub(&ident);
+
                     // sub call with args
                     self.fail_if_using_parentheses_when_calling_sub(&ident);
 
-                    // TODO this whole undoing of first parsing too much is a bit of a hack
-                    //   we should probably try to find a better way to handle this
-
                     let (patched_ident, part_of_expression) = Self::fix_sub_ident(ident);
                     let args = self.sub_arguments(part_of_expression);
+
                     Stmt::SubCall {
                         fn_name: patched_ident,
                         args,
@@ -565,77 +570,59 @@ where
     }
 
     /// When calling a Sub
-    /// If the last part of the ident has any array indices
-    /// we need to re-evaluate them as part of the arguments
-    /// because they are part of the argument expression.
+    /// If the last part of the ident has any function application with single argument
+    /// we need to re-evaluate it as part of the sub arguments. As it is part of the argument expression.
+    ///
+    /// eg `SomeArray(1).Accessor(1,2,3)(1)` should be parsed as `SomeArray(1).Accessor(1,2,3)` + `1` as argument
     fn fix_sub_ident(ident: FullIdent) -> (FullIdent, Option<Expr>) {
         let mut part_of_expression: Option<Expr> = None;
-        let mut last_access = ident;
+        let mut patched_ident = ident.clone();
 
-        if last_access.property_accesses.is_empty() {
-            // if there are no property accesses, we can just use the base
-            let base_indices = last_access.base.array_indices();
-            if !base_indices.is_empty() {
-                if let Some(indices) = base_indices.last() {
-                    part_of_expression = indices.last().and_then(|y| y.clone())
-                }
-                let mut base_copy = last_access.base.clone();
-                base_copy.set_array_indices(
-                    base_copy
-                        .array_indices()
-                        .iter()
-                        .take(base_indices.len() - 1)
-                        .cloned()
-                        .collect(),
-                );
-                last_access = FullIdent {
-                    base: base_copy,
-                    property_accesses: vec![],
-                };
-            };
-        } else {
-            while !last_access.property_accesses.is_empty() {
-                let last = last_access.property_accesses.last().unwrap();
-                if last.array_indices.len() == 1 {
-                    let last = last.clone();
-                    // from a previous check we know that there is only one array index
-                    part_of_expression
-                        .clone_from(last.array_indices.first().unwrap().clone().first().unwrap());
+        // if the outer expression is a function application with a single argument
+        // we need to re-evaluate it as part of the sub arguments
+        let outer: Expr = *ident.0;
 
-                    last_access = FullIdent {
-                        base: last_access.base,
-                        property_accesses: last_access
-                            .property_accesses
-                            .iter()
-                            .take(last_access.property_accesses.len() - 1)
-                            .cloned()
-                            .collect(),
-                    };
-                } else {
-                    break;
-                }
+        if let Expr::FnApplication { callee, args } = outer {
+            if args.len() == 1 {
+                part_of_expression = Some(args[0].clone().unwrap());
+                patched_ident = FullIdent::new(*callee)
             }
         }
-        let patched_ident = last_access;
+
         (patched_ident, part_of_expression)
+    }
+
+    /// Specific case where we have a sub call like `Foo(), 1`
+    /// These however are valid: `Foo(1), 1` (translates to `Foo 1, 1`) and `Foo()`
+    ///
+    /// WScript returns: 'compilation error: Expected end of statement'
+    fn fail_if_using_empty_parentheses_when_calling_sub(&mut self, ident: &FullIdent) {
+        let inner = &ident.0;
+        if let Expr::FnApplication { args, .. } = &**inner {
+            if args.is_empty() && self.at(T![,]) {
+                let full = self.peek_full();
+                panic!(
+                    "{}:{} compilation error: Expected end of statement",
+                    full.line, full.column
+                );
+            }
+        }
     }
 
     /// A sub call statement like `something(1,2)` or `SomeArray(1).SomeSub(1,2,3)` is not valid
     /// However a sub call statement like `something(2)` is valid as the `(2)` is considered the first argument
-    /// On windows you get a 'compilation error: Cannot use parentheses when calling a Sub'
+    ///
+    /// WScript returns: 'compilation error: Cannot use parentheses when calling a Sub'
     fn fail_if_using_parentheses_when_calling_sub(&mut self, ident: &FullIdent) {
-        let last_part_indices = ident
-            .property_accesses
-            .last()
-            .map(|i| &i.array_indices)
-            .unwrap_or_else(|| ident.base.array_indices());
-        if !last_part_indices.is_empty() && last_part_indices.first().unwrap().len() > 1 {
-            // array access
-            let full = self.peek_full();
-            panic!(
-                "{}:{} compilation error: Cannot use parentheses when calling a Sub",
-                full.line, full.column
-            );
+        let inner = &ident.0;
+        if let Expr::FnApplication { args, .. } = &**inner {
+            if args.len() > 1 {
+                let full = self.peek_full();
+                panic!(
+                    "{}:{} compilation error: Cannot use parentheses when calling a Sub",
+                    full.line, full.column
+                );
+            }
         }
     }
 
@@ -1019,15 +1006,6 @@ where
         }
     }
 
-    fn multi_parenthesized_arguments(&mut self) -> Vec<Vec<Option<Expr>>> {
-        let mut arguments = Vec::new();
-        while self.at(T!['(']) {
-            let group = self.parenthesized_optional_arguments();
-            arguments.push(group);
-        }
-        arguments
-    }
-
     fn optional_parenthesized_property_arguments(&mut self) -> Vec<(String, ArgumentType)> {
         let mut property_arguments = Vec::new();
         if self.at(T!['(']) {
@@ -1055,52 +1033,132 @@ where
         property_arguments
     }
 
-    // TODO git rid of this stuff, the new FnCall should be able to handle this
-    pub(crate) fn ident_part(&mut self) -> IdentPart {
-        // example input: `foo` or `foo(1)` or `foo(1, 2)`
-        let name = self.identifier("identifier");
-
-        let array_indices = self.multi_parenthesized_arguments();
-        IdentPart {
-            name,
-            array_indices,
-        }
+    fn ident_deep(&mut self) -> FullIdent {
+        let expr = self.ident_deep2();
+        FullIdent(Box::new(expr))
     }
 
-    /// Parse a deep identifier, which can contain multiple array and property accesses.
-    /// example input: `foo(x + 1).bar.baz(2,3).name`
-    pub(crate) fn ident_deep(&mut self) -> FullIdent {
-        let base = if self.at(T![.]) {
-            self.consume(T![.]);
-            IdentBase::Partial(self.ident_part())
-        } else if self.at(T![_.]) {
-            // Eg an expression at the start of a line will not match the T![.]
-            // because we use the inverse logic in that T![.] actually requires whitespace to be
-            // matched.
-            self.consume(T![_.]);
-            IdentBase::Partial(self.ident_part())
-        } else if self.at(T![me]) {
-            self.consume(T![me]);
-            // TODO can we have array indices on me?
-            IdentBase::Me {
-                array_indices: vec![],
+    fn ident_deep2(&mut self) -> Expr {
+        let mut lhs = self.ident_deep_lhs();
+        loop {
+            match self.peek() {
+                // highest binding power
+                // _. is the same as . but disallows whitespace between the dot and the base.
+                // The property itself is allowed to be prefixed with whitespace.
+                T![_.] => {
+                    self.consume(T![_.]);
+                    let property = self.identifier("property");
+                    lhs = Expr::MemberExpression {
+                        base: Box::new(lhs),
+                        property,
+                    };
+                    continue;
+                }
+                T!['('] => {
+                    //self.consume(T!['(']);
+                    let args = self.parenthesized_optional_arguments();
+                    //self.consume(T![')']);
+                    lhs = Expr::FnApplication {
+                        callee: Box::new(lhs),
+                        args,
+                    };
+                    continue;
+                }
+                _ => {
+                    break;
+                }
             }
-        } else {
-            IdentBase::Complete(self.ident_part())
-        };
-
-        let mut property_accesses = vec![];
-        // TODO in windows you can't have a space between the property and the dot
-        while self.at(T![_.]) {
-            self.consume(T![_.]);
-            let part = self.ident_part();
-            property_accesses.push(part);
         }
-        FullIdent {
-            base,
-            property_accesses,
+        lhs
+    }
+
+    fn ident_deep_lhs(&mut self) -> Expr {
+        if let Some(literal) = self.parse_literal() {
+            return Expr::Literal(literal);
+        }
+
+        match self.peek() {
+            // TODO deduplicate this list with identifier()
+            //   we have seen these tokens being used as identifiers
+            T![ident]
+            | T![me]
+            | T![property]
+            | T![stop]
+            | T![option]
+            | T![step]
+            | T![default]
+            | T![set] => {
+                //let full_ident = self.ident_deep();
+                //Expr::IdentFnSubCall(full_ident)
+                let ident = self.identifier("identifier base");
+                Expr::ident(ident)
+            }
+            T![.] => {
+                self.consume(T![.]);
+                let property = self.identifier("property");
+                Expr::MemberExpression {
+                    base: Box::new(WithScoped),
+                    property,
+                }
+            }
+            T![new] => {
+                self.consume(T![new]);
+                let ident = self.consume(T![ident]);
+                let class_name = self.text(&ident);
+                Expr::ident(class_name)
+            }
+            T!['('] => {
+                // There is no AST node for grouped expressions.
+                // Parentheses just influence the tree structure.
+                self.consume(T!['(']);
+                let expr = self.parse_expression(0);
+                self.consume(T![')']);
+                expr
+            }
+            kind => {
+                let token = self.peek_full();
+                panic!(
+                    "{}:{} Unknown start of identifier: {kind}",
+                    token.line, token.column
+                )
+            }
         }
     }
+
+    // /// Parse a deep identifier, which can contain multiple array and property accesses.
+    // /// example input: `foo(x + 1).bar.baz(2,3).name`
+    // pub(crate) fn ident_deep(&mut self) -> FullIdent {
+    //     let base = if self.at(T![.]) {
+    //         self.consume(T![.]);
+    //         IdentBase::Partial(self.ident_part())
+    //     } else if self.at(T![_.]) {
+    //         // Eg an expression at the start of a line will not match the T![.]
+    //         // because we use the inverse logic in that T![.] actually requires whitespace to be
+    //         // matched.
+    //         self.consume(T![_.]);
+    //         IdentBase::Partial(self.ident_part())
+    //     } else if self.at(T![me]) {
+    //         self.consume(T![me]);
+    //         // TODO can we have array indices on me?
+    //         IdentBase::Me {
+    //             array_indices: vec![],
+    //         }
+    //     } else {
+    //         IdentBase::Complete(self.ident_part())
+    //     };
+    //
+    //     let mut property_accesses = vec![];
+    //     // TODO in windows you can't have a space between the property and the dot
+    //     while self.at(T![_.]) {
+    //         self.consume(T![_.]);
+    //         let part = self.ident_part();
+    //         property_accesses.push(part);
+    //     }
+    //     FullIdent {
+    //         base,
+    //         property_accesses,
+    //     }
+    // }
 
     pub fn type_(&mut self) -> ast::Type {
         let ident = self
@@ -1136,41 +1194,62 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::parser::ast::IdentBase;
     use pretty_assertions::assert_eq;
 
     #[test]
-    fn test_parse_ident_deep() {
+    fn test_parse_ident_deep_mixed() {
         let input = "base.prop.prop2(1).     prop3(2,3).   _\nprop4(1)(3).prop5";
         let mut parser = Parser::new(input);
         let ident = parser.ident_deep();
+        #[rustfmt::skip]
         assert_eq!(
             ident,
-            FullIdent {
-                base: IdentBase::ident("base"),
-                property_accesses: vec![
-                    IdentPart {
-                        name: "prop".to_string(),
-                        array_indices: vec![]
-                    },
-                    IdentPart {
-                        name: "prop2".to_string(),
-                        array_indices: vec![vec![Some(Expr::int(1))]]
-                    },
-                    IdentPart {
-                        name: "prop3".to_string(),
-                        array_indices: vec![vec![Some(Expr::int(2)), Some(Expr::int(3))]]
-                    },
-                    IdentPart {
-                        name: "prop4".to_string(),
-                        array_indices: vec![vec![Some(Expr::int(1))], vec![Some(Expr::int(3))]]
-                    },
-                    IdentPart {
-                        name: "prop5".to_string(),
-                        array_indices: vec![]
-                    }
-                ]
-            }
+            FullIdent::new(
+                Expr::member(
+                    Expr::fn_application(
+                        Expr::fn_application(Expr::member(
+                            Expr::fn_application(
+                                Expr::member(
+                                    Expr::fn_application(
+                                        Expr::member(
+                                            Expr::member(
+                                                Expr::ident("base"),
+                                                "prop",
+                                            ),
+                                            "prop2"
+                                        ),
+                                        vec![Expr::int(1), ],
+                                    ),
+                                    "prop3"
+                                ),
+                                vec![Expr::int(2), Expr::int(3), ],
+                            ),
+                            "prop4"
+                        ),
+                        vec![Expr::int(1),],
+                        ),
+                    vec![Expr::int(3),],
+                    ),
+                "prop5"
+                )
+            )
+        );
+    }
+
+    #[test]
+    fn test_parse_ident_deep_absolute() {
+        let input = "obj.prop";
+        let mut parser = Parser::new(input);
+        let ident = parser.ident_deep();
+        #[rustfmt::skip]
+        assert_eq!(
+            ident,
+            FullIdent::new(
+                Expr::member(
+                    Expr::ident("obj"),
+                    "prop"
+                )
+            )
         );
     }
 
@@ -1179,12 +1258,18 @@ mod test {
         let input = ".prop.prop2";
         let mut parser = Parser::new(input);
         let ident = parser.ident_deep();
+        #[rustfmt::skip]
         assert_eq!(
             ident,
-            FullIdent {
-                base: IdentBase::partial("prop"),
-                property_accesses: vec![IdentPart::ident("prop2")]
-            }
+            FullIdent::new(
+                Expr::member(
+                    Expr::member(
+                        Expr::WithScoped,
+                        "prop"
+                    ),
+                    "prop2"
+                )
+            )
         );
     }
 
@@ -1194,17 +1279,25 @@ mod test {
         let input = ".property.property.other";
         let mut parser = Parser::new(input);
         let ident = parser.ident_deep();
+        #[rustfmt::skip]
         assert_eq!(
             ident,
-            FullIdent {
-                base: IdentBase::partial("property"),
-                property_accesses: vec![IdentPart::ident("property"), IdentPart::ident("other")]
-            }
+            FullIdent::new(
+                Expr::member(
+                    Expr::member(
+                        Expr::member(
+                            WithScoped,
+                            "property"
+                        ),
+                        "property"
+                    ),
+                "other"
+            ))
         );
     }
 
     #[test]
-    #[should_panic(expected = "0:0 Expected identifier as identifier, but found `<EOF>`")]
+    #[should_panic(expected = "0:0 Expected identifier as property, but found `<EOF>`")]
     fn test_parse_ident_deep_fail_with_trailing_dot() {
         let input = "a.b.";
         let mut parser = Parser::new(input);
