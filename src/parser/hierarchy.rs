@@ -542,14 +542,17 @@ where
                         args: Vec::new(),
                     }
                 } else {
+                    self.fail_if_using_empty_parentheses_when_calling_sub(&ident);
+                    
                     // sub call with args
                     self.fail_if_using_parentheses_when_calling_sub(&ident);
 
-                    // TODO this whole undoing of first parsing too much is a bit of a hack
-                    //   we should probably try to find a better way to handle this
-
                     let (patched_ident, part_of_expression) = Self::fix_sub_ident(ident);
                     let args = self.sub_arguments(part_of_expression);
+                    
+                    
+                    
+                    
                     Stmt::SubCall {
                         fn_name: patched_ident,
                         args,
@@ -593,33 +596,38 @@ where
         (patched_ident, part_of_expression)
     }
 
-    /// A sub call statement like `something(1,2)` or `SomeArray(1).SomeSub(1,2,3)` is not valid
-    /// However a sub call statement like `something(2)` is valid as the `(2)` is considered the first argument
-    /// On windows you get a 'compilation error: Cannot use parentheses when calling a Sub'
-    fn fail_if_using_parentheses_when_calling_sub(&mut self, ident: &FullIdent) {
-        // check if the last part of the ident has any function application with multiple arguments
-
-        let (_, last) = Self::last(ident);
-
-        if let Some(expr) = last {
-            if let Expr::FnApplication { args, .. } = expr {
-                if args.len() > 1 {
-                    let full = self.peek_full();
-                    panic!(
-                        "{}:{} compilation error: Cannot use parentheses when calling a Sub",
-                        full.line, full.column
-                    );
-                }
+    /// Specific case where we have a sub call like `Foo(), 1`
+    /// These however are valid: `Foo(1), 1` (translates to `Foo 1, 1`) and `Foo()`
+    ///
+    /// WScript returns: 'compilation error: Expected end of statement'
+    fn fail_if_using_empty_parentheses_when_calling_sub(&mut self, ident: &FullIdent) {
+        let inner = &ident.0;
+        if let Expr::FnApplication { args, .. } = &**inner {
+            if args.is_empty() && self.at(T![,]) {
+                let full = self.peek_full();
+                panic!(
+                    "{}:{} compilation error: Expected end of statement",
+                    full.line, full.column
+                );
             }
         }
     }
 
-    /// Get the last part of the ident looking at the dot separated parts and the function application
-    ///
-    /// eg `SomeArray(1).Accessor(1,2,3)` -> SomeArray(1).Accessor and FnApplication `(1,2,3)`
-    fn last(ident: &FullIdent) -> (FullIdent, Option<Expr>) {
-        // FIXME: implement this
-        (ident.clone(), None)
+    /// A sub call statement like `something(1,2)` or `SomeArray(1).SomeSub(1,2,3)` is not valid
+    /// However a sub call statement like `something(2)` is valid as the `(2)` is considered the first argument
+    /// 
+    /// WScript returns: 'compilation error: Cannot use parentheses when calling a Sub'
+    fn fail_if_using_parentheses_when_calling_sub(&mut self, ident: &FullIdent) {
+        let inner = &ident.0;
+        if let Expr::FnApplication { args, .. } = &**inner {
+            if args.len() > 1 {
+                let full = self.peek_full();
+                panic!(
+                    "{}:{} compilation error: Cannot use parentheses when calling a Sub",
+                    full.line, full.column
+                );
+            }
+        }
     }
 
     fn statement_call(&mut self) -> Stmt {

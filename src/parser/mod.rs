@@ -2291,9 +2291,31 @@ Const a = 1			' some info
         let input = "DoSomething (x + 1), 2";
         Parser::new(input).statement(true);
     }
+    
+    #[test]
+    #[should_panic = "Expected end of statement"]
+    fn test_statement_expected_end() {
+        // Windows: compilation error: Expected end of statement
+        // TODO make these tests pass
+        let input = "DoSomething(),0";
+        Parser::new(input).statement(true);
+    }
 
     #[test]
-    #[should_panic = "0:13 Expected to consume `)`, but found `,`"]
+    fn test_statement_do_not_expect_end() {
+        let input = "DoSomething(1),0";
+        let stmt = Parser::new(input).statement(true);
+        assert_eq!(
+            stmt,
+            Stmt::SubCall {
+                fn_name: FullIdent::ident("DoSomething"),
+                args: vec![Some(Expr::int(1)), Some(Expr::int(0))],
+            }
+        );
+    }
+
+    #[test]
+    #[should_panic = "compilation error: Cannot use parentheses when calling a Sub"]
     fn test_statement_no_parenthesis_when_calling_sub() {
         // compilation error: Cannot use parentheses when calling a Sub
         let input = "DoSomething(0,0)";
@@ -2301,7 +2323,7 @@ Const a = 1			' some info
     }
 
     #[test]
-    #[should_panic = "0:11 Expected to consume `)`, but found `,`"]
+    #[should_panic = "compilation error: Cannot use parentheses when calling a Sub"]
     fn test_statement_no_parenthesis_when_calling_deep_sub() {
         // compilation error: Cannot use parentheses when calling a Sub
         let input = "SomeArray(1,2).DoSomething(0,0,3)";
@@ -2309,7 +2331,7 @@ Const a = 1			' some info
     }
 
     #[test]
-    #[should_panic = "0:11 Expected to consume `)`, but found `,`"]
+    #[should_panic = "compilation error: Cannot use parentheses when calling a Sub"]
     fn test_statement_no_parenthesis_when_calling_sub_and_invalid_statement() {
         // compilation error: Cannot use parentheses when calling a Sub
         let input = "something(0,0) + 1";
