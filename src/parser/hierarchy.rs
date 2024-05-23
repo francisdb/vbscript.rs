@@ -348,7 +348,7 @@ where
 
         let parameters = self.optional_declaration_parameter_list("Function");
 
-        self.consume_line_delimiter();
+        self.consume_optional_line_delimiter();
         // do we need to do something special with the returned value?
         let body = self.block(true, &[T![end]]);
 

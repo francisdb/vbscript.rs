@@ -142,6 +142,7 @@ pub enum TokenKind {
     OctalInteger,
     Real,
     String,
+    DateTime,
     // Keywords
     KeywordMod,
     KeywordConst,
@@ -335,6 +336,9 @@ macro_rules! T {
     };
     [string_literal] => {
         $crate::lexer::TokenKind::String
+    };
+    [date_time_literal] => {
+        $crate::lexer::TokenKind::DateTime
     };
     // Keywords
     [ident] => {
@@ -584,6 +588,7 @@ impl fmt::Display for TokenKind {
                 T![octal_integer_literal] => "octal_integer_literal",
                 T![real_literal] => "real_literal",
                 T![string_literal] => "string_literal",
+                T![date_time_literal] => "date_time_literal",
                 // Keywords
                 T![ident] => "identifier",
                 T![const] => "const",

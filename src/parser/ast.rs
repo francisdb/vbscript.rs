@@ -318,6 +318,7 @@ pub enum Lit {
     Float(f64),
     Str(String),
     Bool(bool),
+    DateTime(String),
     Nothing,
     Empty,
     Null,
@@ -614,6 +615,7 @@ impl fmt::Display for Lit {
             Lit::Int(i) => write!(f, "{}", i),
             Lit::Float(fl) => write!(f, "{}", fl),
             Lit::Str(s) => write!(f, r#""{}""#, s),
+            Lit::DateTime(dt) => write!(f, "#{}#", dt),
             Lit::Bool(b) => {
                 if *b {
                     write!(f, "True")

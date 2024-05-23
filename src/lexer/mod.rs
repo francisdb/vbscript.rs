@@ -211,10 +211,10 @@ mod test {
 
     #[test]
     fn hex_integer_literal() {
-        let input = "&H10";
+        let input = "&H10 &h80040000&";
         let lexer = Lexer::new(input);
         let tokens: Vec<_> = lexer.map(|t| t.kind).collect();
-        assert_eq!(tokens, vec![T![hex_integer_literal], T![EOF],]);
+        assert_eq!(tokens, vec![T![hex_integer_literal], T![ws], T![hex_integer_literal], T![EOF],]);
     }
 
     #[test]
@@ -535,5 +535,28 @@ mod test {
         let tokens: Vec<_> = lexer.tokenize();
         let token_kinds = tokens.iter().map(|t| t.kind).collect::<Vec<_>>();
         assert_eq!(token_kinds, [T![ident], T![ws], T![.], T![ident], T![EOF],]);
+    }
+    #[test]
+    fn tokenize_date_literals() {
+        // Fails on windows with: runtime error: Invalid or unqualified reference
+        let input = "#1/1/2000# #12/31/2000# #1899-12-31# #112-31# # 1/1/2011 #";
+        let mut lexer = Lexer::new(input);
+        let tokens: Vec<_> = lexer.tokenize();
+        let token_kinds = tokens.iter().map(|t| t.kind).collect::<Vec<_>>();
+        assert_eq!(
+            token_kinds,
+            [
+                T![date_time_literal],
+                T![ws],
+                T![date_time_literal],
+                T![ws],
+                T![date_time_literal],
+                T![ws],
+                T![date_time_literal],
+                T![ws],
+                T![date_time_literal],
+                T![EOF],
+            ]
+        );
     }
 }

@@ -170,6 +170,12 @@ impl<'input> Iterator for TokenIter<'input> {
                 self.prev_token_kind_including_ws = current_token.kind;
                 continue;
             }
+            // skip empty inline lines
+            if matches!(self.prev_token_kind, T![:] | T![nl]) && matches!(current_token.kind, T![:]) {
+                self.prev_token_kind = current_token.kind;
+                self.prev_token_kind_including_ws = current_token.kind;
+                continue;
+            }
             // skip single line comments that are preceded by a newline
             if matches!(self.prev_token_kind, T![nl]) && matches!(current_token.kind, T![comment]) {
                 // hacky way to not keep the comment newline
@@ -826,6 +832,30 @@ Const a = 1			' some info
     }
 
     #[test]
+    fn test_parse_file_empty_with_colons() {
+        let input = ":: ::";
+        let mut parser = Parser::new(input);
+        let all = parser.file();
+        assert_eq!(
+            all,
+            vec![]
+        );
+    }
+
+    #[test]
+    fn test_parse_file_empty_with_colon_and_newline() {
+        let input = ":\r\n";
+        let mut parser = Parser::new(input);
+        let all = parser.file();
+        assert_eq!(
+            all,
+            vec![]
+        );
+    }
+
+
+
+    #[test]
     fn test_parse_file_empty_with_comments() {
         let input = indoc! {"
             ' This is a comment
@@ -847,7 +877,7 @@ Const a = 1			' some info
     }
 
     #[test]
-    fn parse_option_and_randomize_on_slingle_line() {
+    fn parse_option_and_randomize_on_single_line() {
         let input = "Option Explicit : Randomize";
         let mut parser = Parser::new(input);
         let all = parser.file();
@@ -2427,6 +2457,22 @@ Const a = 1			' some info
     #[test]
     fn test_parse_function_single_line_with_colons() {
         let input = "Function NullFunction(a) : End Function";
+        let mut parser = Parser::new(input);
+        let items = parser.file();
+        assert_eq!(
+            items,
+            vec![Item::Statement(Stmt::Function {
+                visibility: Visibility::Default,
+                name: "NullFunction".to_string(),
+                parameters: vec![Argument::ByVal("a".to_string())],
+                body: vec![],
+            })]
+        );
+    }
+
+    #[test]
+    fn test_parse_function_single_line_without_colons() {
+        let input = "Function NullFunction(a) End Function";
         let mut parser = Parser::new(input);
         let items = parser.file();
         assert_eq!(

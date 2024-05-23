@@ -8,6 +8,7 @@ repos=(
   "vpx-standalone-scripts https://github.com/jsm174/vpx-standalone-scripts.git"
   "vpinball/scripts https://github.com/vpinball/vpinball.git"
   "sverrewl-vpxtable-scripts https://github.com/sverrewl/vpxtable_scripts.git"
+  "wine-vbscript/dlls/vbscript/tests https://github.com/wine-mirror/wine.git"
 )
 
 for repo in "${repos[@]}"; do
@@ -18,7 +19,8 @@ for repo in "${repos[@]}"; do
   # Split the directory into repo and subdirectory
   IFS='/' read -r -a dir_parts <<< "$dir"
   repo_dir=${dir_parts[0]}
-  sub_dir=${dir_parts[1]}
+  sub_dir=${dir_parts[@]:1}
+  sub_dir=$(IFS=/ ; echo "${dir_parts[*]:1}")
 
   # If a subdirectory is provided, perform a sparse checkout of subdirectory
   if [ -n "$sub_dir" ]; then
