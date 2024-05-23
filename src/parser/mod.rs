@@ -171,7 +171,8 @@ impl<'input> Iterator for TokenIter<'input> {
                 continue;
             }
             // skip empty inline lines
-            if matches!(self.prev_token_kind, T![:] | T![nl]) && matches!(current_token.kind, T![:]) {
+            if matches!(self.prev_token_kind, T![:] | T![nl]) && matches!(current_token.kind, T![:])
+            {
                 self.prev_token_kind = current_token.kind;
                 self.prev_token_kind_including_ws = current_token.kind;
                 continue;
@@ -836,10 +837,7 @@ Const a = 1			' some info
         let input = ":: ::";
         let mut parser = Parser::new(input);
         let all = parser.file();
-        assert_eq!(
-            all,
-            vec![]
-        );
+        assert_eq!(all, vec![]);
     }
 
     #[test]
@@ -847,13 +845,8 @@ Const a = 1			' some info
         let input = ":\r\n";
         let mut parser = Parser::new(input);
         let all = parser.file();
-        assert_eq!(
-            all,
-            vec![]
-        );
+        assert_eq!(all, vec![]);
     }
-
-
 
     #[test]
     fn test_parse_file_empty_with_comments() {

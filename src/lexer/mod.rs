@@ -214,7 +214,15 @@ mod test {
         let input = "&H10 &h80040000&";
         let lexer = Lexer::new(input);
         let tokens: Vec<_> = lexer.map(|t| t.kind).collect();
-        assert_eq!(tokens, vec![T![hex_integer_literal], T![ws], T![hex_integer_literal], T![EOF],]);
+        assert_eq!(
+            tokens,
+            vec![
+                T![hex_integer_literal],
+                T![ws],
+                T![hex_integer_literal],
+                T![EOF],
+            ]
+        );
     }
 
     #[test]

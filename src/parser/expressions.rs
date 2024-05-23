@@ -190,12 +190,10 @@ where
                         } else {
                             &literal_text[2..]
                         };
-                        Lit::Int(
-                            isize::from_str_radix(trimmed, 16).unwrap_or_else(|_| {
-                                panic!("invalid hex integer literal: `{literal_text}`")
-                            }),
-                        )
-                    },
+                        Lit::Int(isize::from_str_radix(trimmed, 16).unwrap_or_else(|_| {
+                            panic!("invalid hex integer literal: `{literal_text}`")
+                        }))
+                    }
                     T![octal_integer_literal] => {
                         Lit::Int(isize::from_str_radix(&literal_text[2..], 8).unwrap_or_else(
                             |_| panic!("invalid octal integer literal: `{literal_text}`"),
@@ -212,7 +210,7 @@ where
                         // drop the # prefix and suffix
                         let trimmed = &literal_text[1..(literal_text.len() - 1)];
                         Lit::DateTime(trimmed.to_string())
-                    },
+                    }
                     T![true] => Lit::Bool(true),
                     T![false] => Lit::Bool(false),
                     T![nothing] => Lit::Nothing,
