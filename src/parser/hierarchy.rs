@@ -1,9 +1,8 @@
 use crate::lexer::{Token, TokenKind};
 use crate::parser::ast::Expr::WithScoped;
 use crate::parser::ast::{
-    Argument, ArgumentType, Case, DoLoopCheck, DoLoopCondition, ErrorClause, Expr, FullIdent,
-    Item, MemberAccess, MemberDefinitions, PropertyType, PropertyVisibility, SetRhs,
-    Stmt, Visibility,
+    Argument, ArgumentType, Case, DoLoopCheck, DoLoopCondition, ErrorClause, Expr, FullIdent, Item,
+    MemberAccess, MemberDefinitions, PropertyType, PropertyVisibility, SetRhs, Stmt, Visibility,
 };
 use crate::parser::{ast, Parser};
 use crate::T;
@@ -543,16 +542,13 @@ where
                     }
                 } else {
                     self.fail_if_using_empty_parentheses_when_calling_sub(&ident);
-                    
+
                     // sub call with args
                     self.fail_if_using_parentheses_when_calling_sub(&ident);
 
                     let (patched_ident, part_of_expression) = Self::fix_sub_ident(ident);
                     let args = self.sub_arguments(part_of_expression);
-                    
-                    
-                    
-                    
+
                     Stmt::SubCall {
                         fn_name: patched_ident,
                         args,
@@ -585,14 +581,14 @@ where
         // if the outer expression is a function application with a single argument
         // we need to re-evaluate it as part of the sub arguments
         let outer: Expr = *ident.0;
-        
-        if let Expr::FnApplication{callee, args} = outer{
+
+        if let Expr::FnApplication { callee, args } = outer {
             if args.len() == 1 {
                 part_of_expression = Some(args[0].clone().unwrap());
                 patched_ident = FullIdent::new(*callee)
             }
         }
-        
+
         (patched_ident, part_of_expression)
     }
 
@@ -615,7 +611,7 @@ where
 
     /// A sub call statement like `something(1,2)` or `SomeArray(1).SomeSub(1,2,3)` is not valid
     /// However a sub call statement like `something(2)` is valid as the `(2)` is considered the first argument
-    /// 
+    ///
     /// WScript returns: 'compilation error: Cannot use parentheses when calling a Sub'
     fn fail_if_using_parentheses_when_calling_sub(&mut self, ident: &FullIdent) {
         let inner = &ident.0;

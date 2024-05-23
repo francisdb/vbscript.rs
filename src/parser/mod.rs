@@ -140,7 +140,7 @@ impl<'input> Iterator for TokenIter<'input> {
             // TODO would it not be better to do a positive check here checking for valid cases?
             if !matches!(
                 self.prev_token_kind_including_ws,
-                T![nl] | T![ws] | T![:] | T!['('] | T![-]
+                T![nl] | T![ws] | T![:] | T!['('] | T![-] | T![,]
             ) && matches!(current_token.kind, T![.])
             {
                 let repacement_token = Token {
@@ -190,14 +190,15 @@ impl<'input> Iterator for TokenIter<'input> {
 mod test {
     use super::*;
     use crate::parser::ast::ErrorClause::{Goto0, ResumeNext};
+    use crate::parser::ast::Expr::WithScoped;
     use crate::parser::ast::Stmt::OnError;
     use crate::parser::ast::{
         Argument, ArgumentType, Case, DoLoopCheck, DoLoopCondition, Expr, FullIdent, Item, Lit,
-        MemberAccess, MemberDefinitions, PropertyType, PropertyVisibility, SetRhs, Stmt, Visibility,
+        MemberAccess, MemberDefinitions, PropertyType, PropertyVisibility, SetRhs, Stmt,
+        Visibility,
     };
     use indoc::indoc;
     use pretty_assertions::assert_eq;
-    use crate::parser::ast::Expr::WithScoped;
 
     fn parse(input: &str) -> Expr {
         let mut parser = Parser::new(input);
@@ -334,14 +335,12 @@ Const a = 1			' some info
             Expr::FnApplication {
                 callee: Box::new(Expr::ident("min")),
                 args: vec![
-                    Some(
-                    Expr::InfixOp {
+                    Some(Expr::InfixOp {
                         op: T![+],
                         lhs: Box::new(Expr::ident("test")),
                         rhs: Box::new(Expr::int(4)),
                     }),
-                    Some(
-                    Expr::FnApplication {
+                    Some(Expr::FnApplication {
                         callee: Box::new(Expr::ident("sin")),
                         args: vec![Some(Expr::InfixOp {
                             op: T![*],
@@ -599,15 +598,11 @@ Const a = 1			' some info
                 group: Box::new(Expr::ident("dogs")),
                 body: vec![
                     Stmt::Assignment {
-                        full_ident: FullIdent::new(
-                            Expr::member(Expr::ident("dog"), "volume"),
-                        ),
+                        full_ident: FullIdent::new(Expr::member(Expr::ident("dog"), "volume"),),
                         value: Box::new(Expr::int(0)),
                     },
                     Stmt::Assignment {
-                        full_ident: FullIdent::new(
-                            Expr::member(Expr::ident("dog"), "visible"),
-                        ),
+                        full_ident: FullIdent::new(Expr::member(Expr::ident("dog"), "visible"),),
                         value: Box::new(Expr::Literal(Lit::Bool(true))),
                     },
                 ],
@@ -989,23 +984,23 @@ Const a = 1			' some info
                     rhs: Box::new(Expr::int(0)),
                 }),
                 body: vec![Stmt::Assignment {
-                    full_ident: FullIdent::new(
-                        Expr::member(Expr::ident("bbs006"), "state"),
-                    ),
+                    full_ident: FullIdent::new(Expr::member(Expr::ident("bbs006"), "state"),),
                     value: Box::new(Expr::ident("x2")),
                 }],
                 elseif_statements: vec![],
                 else_stmt: Some(vec![
                     Stmt::SubCall {
-                        fn_name: FullIdent ::new(
-                            Expr::member(Expr::ident("controller"), "B2SSetData"),
-                        ),
+                        fn_name: FullIdent::new(Expr::member(
+                            Expr::ident("controller"),
+                            "B2SSetData"
+                        ),),
                         args: vec![Some(Expr::int(50)), Some(Expr::ident("x2")),],
                     },
                     Stmt::SubCall {
-                        fn_name: FullIdent::new(
-                            Expr::member(Expr::ident("controller"), "B2SSetData"),
-                        ),
+                        fn_name: FullIdent::new(Expr::member(
+                            Expr::ident("controller"),
+                            "B2SSetData"
+                        ),),
                         args: vec![Some(Expr::int(53)), Some(Expr::ident("x2")),],
                     },
                 ]),
@@ -1159,9 +1154,7 @@ Const a = 1			' some info
                 }),
                 body: vec![
                     Stmt::SubCall {
-                        fn_name: FullIdent::new(
-                            Expr::member(Expr::ident("foo"), "fire"),
-                        ),
+                        fn_name: FullIdent::new(Expr::member(Expr::ident("foo"), "fire"),),
                         args: vec![],
                     },
                     Stmt::IfStmt {
@@ -1171,22 +1164,18 @@ Const a = 1			' some info
                             rhs: Box::new(Expr::int(1)),
                         }),
                         body: vec![Stmt::SubCall {
-                            fn_name: FullIdent::new(
-                                Expr::fn_application(
-                                    Expr::ident("DoSomething"),
-                                    vec![],
-                                )
-                            ),
+                            fn_name: FullIdent::new(Expr::fn_application(
+                                Expr::ident("DoSomething"),
+                                vec![],
+                            )),
                             args: vec![],
                         }],
                         elseif_statements: vec![],
                         else_stmt: Some(vec![Stmt::SubCall {
-                            fn_name: FullIdent::new(
-                                Expr::fn_application(
-                                    Expr::ident("DoSomethingElse"),
-                                    vec![],
-                                )
-                            ),
+                            fn_name: FullIdent::new(Expr::fn_application(
+                                Expr::ident("DoSomethingElse"),
+                                vec![],
+                            )),
                             args: vec![],
                         }]),
                     }
@@ -1696,15 +1685,13 @@ Const a = 1			' some info
         assert_eq!(
             items,
             vec![Item::Statement(Stmt::Assignment {
-                full_ident: FullIdent::new(
-                    Expr::member(
-                        Expr::FnApplication {
-                            callee: Box::new(Expr::ident("objectArray")),
-                            args: vec![Some(Expr::ident("i"))],
-                        },
-                        "image"
-                    )
-                ),
+                full_ident: FullIdent::new(Expr::member(
+                    Expr::FnApplication {
+                        callee: Box::new(Expr::ident("objectArray")),
+                        args: vec![Some(Expr::ident("i"))],
+                    },
+                    "image"
+                )),
                 value: Box::new(Expr::str("test")),
             })]
         );
@@ -1895,12 +1882,10 @@ Const a = 1			' some info
                     Case {
                         tests: vec![Expr::int(82),],
                         body: vec![Stmt::Assignment {
-                            full_ident: FullIdent::new(
-                                Expr::fn_application(
-                                    Expr::member(WithScoped, "Switch"),
-                                    vec![Expr::ident("swCPUDiag")]
-                                )
-                            ),
+                            full_ident: FullIdent::new(Expr::fn_application(
+                                Expr::member(WithScoped, "Switch"),
+                                vec![Expr::ident("swCPUDiag")]
+                            )),
                             value: Box::new(Expr::ident("t")),
                         }]
                     },
@@ -2213,12 +2198,10 @@ Const a = 1			' some info
         assert_eq!(
             stmt,
             Stmt::Assignment {
-                full_ident: FullIdent::new(
-                    Expr::fn_application(
-                        Expr::fn_application(Expr::ident("foo"), vec![Expr::int(1)]),
-                        vec![Expr::int(2)]
-                    )
-                ),
+                full_ident: FullIdent::new(Expr::fn_application(
+                    Expr::fn_application(Expr::ident("foo"), vec![Expr::int(1)]),
+                    vec![Expr::int(2)]
+                )),
                 value: Box::new(Expr::int(3)),
             }
         );
@@ -2291,7 +2274,7 @@ Const a = 1			' some info
         let input = "DoSomething (x + 1), 2";
         Parser::new(input).statement(true);
     }
-    
+
     #[test]
     #[should_panic = "Expected end of statement"]
     fn test_statement_expected_end() {
@@ -2429,13 +2412,12 @@ Const a = 1			' some info
                 args: vec![Some(Expr::FnApplication {
                     callee: Box::new(Expr::ident("MyFn")),
                     args: vec![
-                        Some(Expr::int(0)), 
-                        None, 
+                        Some(Expr::int(0)),
+                        None,
                         Some(Expr::PrefixOp {
                             op: T![-],
                             expr: Box::new(Expr::int(1)),
-                            }
-                        )
+                        })
                     ],
                 })]
             }
@@ -2609,6 +2591,41 @@ Const a = 1			' some info
                     },
                 ],
             })]
+        );
+    }
+
+    #[test]
+    fn test_property_access_in_args_without_space() {
+        let input = "Foo 1,.enabled";
+        let mut parser = Parser::new(input);
+        let stmt = parser.statement(true);
+        assert_eq!(
+            stmt,
+            Stmt::SubCall {
+                fn_name: FullIdent::ident("Foo"),
+                args: vec![
+                    Some(Expr::int(1)),
+                    Some(Expr::member(Expr::WithScoped, "enabled")),
+                ],
+            }
+        );
+    }
+
+    #[test]
+    fn test_step_as_identifier() {
+        let input = "x=y.Step";
+        let mut parser = Parser::new(input);
+        let stmt = parser.statement(true);
+        #[rustfmt::skip]
+        assert_eq!(
+            stmt,
+            Stmt::assignment (
+                FullIdent::ident("x"),
+                Expr::member(
+                    Expr::ident("y"), 
+                    "Step"
+                )
+            )
         );
     }
 }

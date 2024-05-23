@@ -83,8 +83,7 @@ where
             // The property itself is allowed to be prefixed with whitespace.
             if op == T![_.] {
                 self.consume(T![_.]);
-                let ident = self.consume(T![ident]);
-                let property = self.text(&ident).to_string();
+                let property = self.identifier("property name");
                 lhs = Expr::MemberExpression {
                     base: Box::new(lhs),
                     property,
@@ -526,10 +525,7 @@ mod test {
         let expr = parser.expression();
         assert_eq!(
             expr,
-            Expr::fn_application(
-                Expr::new("Foo"),
-                vec![Expr::int(1)]
-            )
+            Expr::fn_application(Expr::new("Foo"), vec![Expr::int(1)])
         );
     }
 

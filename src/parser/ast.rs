@@ -304,7 +304,7 @@ impl Expr {
     }
 
     pub fn fn_application(callee: Expr, args: Vec<Expr>) -> Self {
-        let args = args.into_iter().map(|arg| Some(arg)).collect();
+        let args = args.into_iter().map(Some).collect();
         Expr::FnApplication {
             callee: Box::new(callee),
             args,
