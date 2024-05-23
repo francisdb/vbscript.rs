@@ -339,6 +339,9 @@ impl SetRhs {
     pub fn ident(name: impl Into<String>) -> Self {
         SetRhs::Expr(Box::new(Expr::ident(name)))
     }
+    pub fn expr(expr: Expr) -> Self {
+        SetRhs::Expr(Box::new(expr))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -543,6 +546,13 @@ impl Stmt {
 
     pub fn const_(var_name: impl Into<String>, value: Lit) -> Self {
         Stmt::Const(vec![(var_name.into(), value)])
+    }
+
+    pub fn assignment(ident: FullIdent, value: Expr) -> Self {
+        Stmt::Assignment {
+            full_ident: ident,
+            value: Box::new(value),
+        }
     }
 }
 

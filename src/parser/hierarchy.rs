@@ -2,7 +2,7 @@ use crate::lexer::{Token, TokenKind};
 use crate::parser::ast::Expr::WithScoped;
 use crate::parser::ast::{
     Argument, ArgumentType, Case, DoLoopCheck, DoLoopCondition, ErrorClause, Expr, FullIdent,
-    IdentPart, Item, MemberAccess, MemberDefinitions, PropertyType, PropertyVisibility, SetRhs,
+    Item, MemberAccess, MemberDefinitions, PropertyType, PropertyVisibility, SetRhs,
     Stmt, Visibility,
 };
 use crate::parser::{ast, Parser};
@@ -576,26 +576,21 @@ where
     ///
     /// eg `SomeArray(1).Accessor(1,2,3)(1)` should be parsed as `SomeArray(1).Accessor(1,2,3)` + `1` as argument
     fn fix_sub_ident(ident: FullIdent) -> (FullIdent, Option<Expr>) {
-        //let mut part_of_expression: Option<Expr> = None;
+        let mut part_of_expression: Option<Expr> = None;
+        let mut patched_ident = ident.clone();
 
-        // let expr = Self::tail(ident);
-        // match expr {
-        //     Expr::FnApplication {
-        //         args,
-        //         fn_name,
-        //         ..
-        //     } if args.len() == 1 => {
-        //         part_of_expression = Some(args[0].clone());
-        //         let mut new_ident = ident.clone();
-        //         new_ident.0 = fn_name;
-        //         (new_ident, part_of_expression)
-        //     }
-        //     _ => {}
-        // }
-        // let patched_ident = last_access;
-        // (patched_ident, part_of_expression)
-        // FIXME implement this
-        (ident, None)
+        // if the outer expression is a function application with a single argument
+        // we need to re-evaluate it as part of the sub arguments
+        let outer: Expr = *ident.0;
+        
+        if let Expr::FnApplication{callee, args} = outer{
+            if args.len() == 1 {
+                part_of_expression = Some(args[0].clone().unwrap());
+                patched_ident = FullIdent::new(*callee)
+            }
+        }
+        
+        (patched_ident, part_of_expression)
     }
 
     /// A sub call statement like `something(1,2)` or `SomeArray(1).SomeSub(1,2,3)` is not valid
@@ -1032,19 +1027,6 @@ where
             self.consume(T![')']);
         }
         property_arguments
-    }
-
-    // TODO git rid of this stuff, the new FnCall should be able to handle this
-    pub(crate) fn ident_part(&mut self) -> IdentPart {
-        // example input: `foo` or `foo(1)` or `foo(1, 2)`
-        let name = self.identifier("identifier");
-
-        // let array_indices = self.multi_parenthesized_arguments();
-        let array_indices = vec![];
-        IdentPart {
-            name,
-            array_indices,
-        }
     }
 
     fn ident_deep(&mut self) -> FullIdent {
