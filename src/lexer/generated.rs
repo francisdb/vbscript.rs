@@ -251,6 +251,10 @@ pub(super) enum LogosToken {
     KwXor((usize, usize)),
     #[token("stop", word_callback, ignore(ascii_case))]
     KwStop((usize, usize)),
+    // We can't merge this one with comment because x.rem is a valid member access
+    // and'd we ant validate that rem is not preceded by a dot unless we enable lookbehind
+    #[token("rem", word_callback, ignore(ascii_case))]
+    KwRem((usize, usize)),
     /// Represents reserved keywords but that are not actually in use
     /// https://isvbscriptdead.com/reserved-keywords/
     // As, Byte, Boolean, Double, Integer, Long, Single, Stop, Variant
@@ -271,8 +275,8 @@ pub(super) enum LogosToken {
     #[regex(r"_[ \t\f]*(\r\n?|\n)", newline_callback)]
     LineContinuation((usize, usize)),
 
-    // comments using ' or REM but not x.rem
-    #[regex(r"(?i)'([^\r\n]*)|rem ([^\r\n]*)")]
+    // comments using '
+    #[regex(r"(?i)'([^\r\n]*)")]
     Comment,
 }
 
@@ -360,6 +364,7 @@ impl LogosToken {
             KwPublic((line, column)) => (*line, *column),
             KwRaiseEvent((line, column)) => (*line, *column),
             KwReDim((line, column)) => (*line, *column),
+            KwRem((line, column)) => (*line, *column),
             KwResume((line, column)) => (*line, *column),
             KwRSet((line, column)) => (*line, *column),
             KwSelect((line, column)) => (*line, *column),
@@ -476,6 +481,7 @@ impl LogosToken {
             KwPublic(_)  => T![public],
             KwRaiseEvent(_) => unimplemented!( "KwRaiseEvent"),
             KwReDim(_)      => T![redim],
+            KwRem(_)        => T![rem],
             KwResume(_)     => T![resume],
             KwRSet(_)       => unimplemented!( "KwRSet"),
             KwSelect(_)  => T![select],

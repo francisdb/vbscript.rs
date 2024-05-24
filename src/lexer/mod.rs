@@ -125,7 +125,10 @@ mod test {
             .filter(|t| t.kind != T![ws])
             .collect();
         let token_kinds = tokens.iter().map(|t| t.kind).collect::<Vec<_>>();
-        assert_eq!(token_kinds, [T![comment], T![nl], T![EOF],]);
+        assert_eq!(
+            token_kinds,
+            [T![rem], T![ident], T![ident], T![nl], T![EOF],]
+        );
     }
 
     #[test]

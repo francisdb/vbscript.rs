@@ -178,6 +178,19 @@ impl<'input> Iterator for TokenIter<'input> {
                 self.prev_token_kind_including_ws = T![nl];
                 continue;
             }
+            // if we find a REM that is not preceded by a dot we discard until the end of the line
+            if matches!(current_token.kind, T![rem])
+                && !matches!(self.prev_token_kind_including_ws, T![_.])
+            {
+                let mut cur = current_token;
+                // this will also discard any error tokens which are expected
+                while !matches!(cur.kind, T![nl]) {
+                    cur = self.lexer.next()?;
+                }
+                self.prev_token_kind = cur.kind;
+                self.prev_token_kind_including_ws = cur.kind;
+                continue;
+            }
             self.prev_token_kind = current_token.kind;
             self.prev_token_kind_including_ws = current_token.kind;
             if !matches!(current_token.kind, T![comment]) {
@@ -866,6 +879,8 @@ Const a = 1			' some info
     fn test_parse_file_empty_with_comments() {
         let input = indoc! {"
             ' This is a comment
+
+            REM This is a rem comment
 
             ' This is another comment without newline"};
         let mut parser = Parser::new(input);
@@ -2911,12 +2926,39 @@ Const a = 1			' some info
     }
 
     #[test]
-    fn parse_member_access_with_keywords(){
-        // If an object is create outside of vbscript and passed in,
+    fn parse_member_access_with_rem() {
+        // this is a special case because `rem` is normally used for comments
+        let input = indoc! {r#"
+            rem this is a comment!
+            obj.rem = 10
+        "#};
+        let mut parser = Parser::new(input);
+        // read all tokens seen from the parser
+        let mut tokens = vec![];
+        while let Some(next) = parser.next() {
+            tokens.push(next.kind);
+        }
+        assert_eq!(
+            tokens,
+            vec![
+                T![ident],
+                T![_.],
+                T![rem],
+                T![=],
+                T![integer_literal],
+                T![nl],
+                T![EOF],
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_member_access_with_keywords() {
+        // If an object is created outside vbscript and passed in,
         // it can have all kinds of properties and methods that are not
         // valid in vbscript. But these are still accessible using dot notation.
-        // FIXME: for now we don't support `obj.rem = 10`
         let input = indoc! {r#"
+            obj.rem = 10
             obj.true = 10
             obj.false = 10
             obj.not = 10
@@ -2988,7 +3030,7 @@ Const a = 1			' some info
         assert_eq!(
             file,
             vec![
-                //member_assign("rem"),
+                member_assign("rem"),
                 member_assign("true"),
                 member_assign("false"),
                 member_assign("not"),
@@ -3058,13 +3100,11 @@ Const a = 1			' some info
             stmt,
             Stmt::SubCall {
                 fn_name: FullIdent::ident("MySub"),
-                args: vec![Some(
-                    InfixOp {
-                        op: T![&],
-                        lhs: Box::new(Expr::str("test")),
-                        rhs: Box::new(Expr::member(Expr::WithScoped, "prop")),
-                    }
-                )],
+                args: vec![Some(InfixOp {
+                    op: T![&],
+                    lhs: Box::new(Expr::str("test")),
+                    rhs: Box::new(Expr::member(Expr::WithScoped, "prop")),
+                })],
             }
         );
     }

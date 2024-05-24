@@ -579,12 +579,12 @@ where
             | T![property]
             | T![me]
             | T![stop]
-            | T![step] => self.text(&ident).to_string(),
+            | T![step]
+            | T![rem] => self.text(&ident).to_string(),
             _ => {
-                let peek = self.peek_full();
                 panic!(
                     "{}:{} Expected identifier as {}, but found `{}`",
-                    peek.line, peek.column, ITEM_TYPE, ident.kind
+                    ident.line, ident.column, ITEM_TYPE, ident.kind
                 )
             }
         }
@@ -1453,7 +1453,7 @@ mod test {
     }
 
     #[test]
-    #[should_panic(expected = "Expected a token, but found EOF")]
+    #[should_panic(expected = "0:0 Expected identifier as member identifier, but found `<EOF>`")]
     fn test_parse_ident_deep_fail_with_trailing_dot() {
         let input = "a.b.";
         let mut parser = Parser::new(input);

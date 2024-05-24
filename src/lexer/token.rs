@@ -192,6 +192,9 @@ pub enum TokenKind {
     /// Any keywords that are reserved but not used, like "As"
     /// see https://docs.microsoft.com/en-us/dotnet/visual-basic/language-reference/keywords/reserved-keywords
     KeywordUnused,
+    /// The Rem statement is used to include comments within the program code.
+    /// However, the ' is also used for comments and more common.
+    KeywordRem,
     //Special values
     Empty,
     Null,
@@ -470,6 +473,9 @@ macro_rules! T {
     [unused] => {
         $crate::lexer::TokenKind::KeywordUnused
     };
+    [rem] => {
+        $crate::lexer::TokenKind::KeywordRem
+    };
     // Special values
     [empty] => {
         $crate::lexer::TokenKind::Empty
@@ -631,6 +637,7 @@ impl fmt::Display for TokenKind {
                 T![else] => "else",
                 T![end] => "end",
                 T![exit] => "exit",
+                T![rem] => "rem",
                 // Special values
                 T![empty] => "empty",
                 T![null] => "null",
