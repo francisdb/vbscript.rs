@@ -288,6 +288,10 @@ impl Expr {
         Expr::Literal(Lit::Int(i))
     }
 
+    pub fn bool(b: bool) -> Self {
+        Expr::Literal(Lit::Bool(b))
+    }
+
     pub fn str(s: impl Into<String>) -> Self {
         Expr::Literal(Lit::Str(s.into()))
     }
@@ -614,7 +618,7 @@ impl fmt::Display for Lit {
         match self {
             Lit::Int(i) => write!(f, "{}", i),
             Lit::Float(fl) => write!(f, "{}", fl),
-            Lit::Str(s) => write!(f, r#""{}""#, s),
+            Lit::Str(s) => write!(f, r#""{}""#, s.replace("\"", "\"\"")),
             Lit::DateTime(dt) => write!(f, "#{}#", dt),
             Lit::Bool(b) => {
                 if *b {

@@ -6,6 +6,7 @@ use crate::parser::ast::{
 };
 use crate::parser::{ast, Parser};
 use crate::T;
+use std::collections::HashSet;
 
 impl<'input, I> Parser<'input, I>
 where
@@ -14,6 +15,12 @@ where
     pub fn file(&mut self) -> Vec<ast::Item> {
         let mut items = Vec::new();
         while !self.at(T![EOF]) {
+            // Skip newlines, our token iter newline handling can't catch all cases
+            // one example is ":\r\n".
+            if self.at(T![nl]) {
+                self.consume(T![nl]);
+                continue;
+            }
             let item = self.item();
             items.push(item);
         }
@@ -99,8 +106,7 @@ where
 
     fn item_class(&mut self) -> Item {
         self.consume(T![class]);
-        let ident = self.consume(T![ident]);
-        let name = self.text(&ident).to_string();
+        let name = self.identifier("class name");
         self.consume_line_delimiter();
         let mut members = Vec::new();
         let mut member_accessors = Vec::new();
@@ -137,6 +143,11 @@ where
                     }
                     dims.push(self.class_dim());
                 }
+                T![nl] => {
+                    // Skip newlines, our token iter newline handling can't catch all cases
+                    // one example is ":\r\n".
+                    self.consume(T![nl]);
+                }
                 _ => {
                     members.push(self.class_member(visibility));
                 }
@@ -144,13 +155,61 @@ where
         }
         self.consume(T![end]);
         self.consume(T![class]);
-        self.consume_if_not_eof(T![nl]);
+        self.consume_line_delimiter();
+        Self::validate_class(&members, &methods, &dims);
         Item::Class {
             name,
             members,
             dims,
             member_accessors,
             methods,
+        }
+    }
+
+    fn validate_class(
+        members: &Vec<MemberDefinitions>,
+        methods: &Vec<Stmt>,
+        dims: &Vec<Vec<(String, Option<Vec<usize>>)>>,
+    ) {
+        // TODO add line numbers to the error messages
+        //   we will probably have to inline this to get those
+        // TODO check if there are some checks to do on member accessors
+        // if there are any duplicates in the members or methods (case-insensitive)
+        // we should return an error
+        let mut member_names = HashSet::new();
+        for member in members {
+            for (name, _) in &member.properties {
+                let lower = name.to_ascii_lowercase();
+                if member_names.contains(&lower) {
+                    panic!("Name redefined '{}'", name);
+                }
+                member_names.insert(lower);
+            }
+        }
+        for dim in dims {
+            for (name, _) in dim {
+                let lower = name.to_ascii_lowercase();
+                if member_names.contains(&lower) {
+                    panic!("Name redefined '{}'", name);
+                }
+                member_names.insert(lower);
+            }
+        }
+        for method in methods {
+            if let Stmt::Sub { name, .. } = method {
+                let lower = name.to_ascii_lowercase();
+                if member_names.contains(&lower) {
+                    panic!("Name redefined '{}'", name);
+                }
+                member_names.insert(lower);
+            }
+            if let Stmt::Function { name, .. } = method {
+                let lower = name.to_ascii_lowercase();
+                if member_names.contains(&lower) {
+                    panic!("Name redefined '{}'", name);
+                }
+                member_names.insert(lower);
+            }
         }
     }
 
@@ -201,8 +260,7 @@ where
 
     fn class_sub(&mut self, visibility: Visibility) -> Stmt {
         self.consume(T![sub]);
-        let ident = self.consume(T![ident]);
-        let method_name = self.text(&ident).to_string();
+        let method_name = self.identifier("Sub name");
         let parameters = self.optional_declaration_parameter_list("Sub");
         self.consume_line_delimiter();
         let body = self.block(true, &[T![end]]);
@@ -219,14 +277,13 @@ where
 
     fn class_function(&mut self, visibility: Visibility) -> Stmt {
         self.consume(T![function]);
-        let ident = self.consume(T![ident]);
-        let method_name = self.text(&ident).to_string();
+        let method_name = self.identifier("Function name");
         let parameters = self.optional_declaration_parameter_list("Function");
         self.consume_line_delimiter();
         let body = self.block(true, &[T![end]]);
         self.consume(T![end]);
         self.consume(T![function]);
-        self.consume_if_not_eof(T![nl]);
+        self.consume_line_delimiter();
         Stmt::Function {
             visibility,
             name: method_name.clone(),
@@ -270,8 +327,7 @@ where
             }
         };
 
-        let ident = self.consume(T![ident]);
-        let name = self.text(&ident).to_string();
+        let name = self.identifier("property name");
         let property_arguments = self.optional_parenthesized_property_arguments();
 
         let property_body = self.block(true, &[T![end]]);
@@ -393,6 +449,7 @@ where
         if self.at(T!['(']) {
             self.consume(T!['(']);
             while !self.at(T![')']) {
+                // see https://learn.microsoft.com/en-us/previous-versions/windows/internet-explorer/ie-developer/scripting-articles/tt223ahx(v=vs.84)
                 // optional modifier
                 let modifier = if self.at(T![byval]) {
                     self.consume(T![byval]);
@@ -405,6 +462,15 @@ where
                 };
 
                 let parameter_name = self.identifier(item_type);
+                // In case of array parameters there is a () allowed after the parameter name
+                // this is optional and totally unclear in the documentation
+                // so we just ignore it.
+                // I could not find any runtime validation that would fail if something is passed that
+                // is not an array.
+                if self.at(T!['(']) {
+                    self.consume(T!['(']);
+                    self.consume(T![')']);
+                }
                 parameters.push(modifier(parameter_name));
                 if self.at(T![,]) {
                     self.consume(T![,]);
@@ -416,16 +482,23 @@ where
     }
 
     pub(crate) fn identifier(&mut self, item_type: &str) -> String {
-        let ident = self.next().unwrap_or_else(|| {
-            let peek_full = self.peek_full();
-            panic!(
-                "{}:{} Tried to parse {}, but there were no more tokens",
-                peek_full.line, peek_full.column, item_type
-            )
-        });
-        let name = match ident.kind {
+        let id = self.identifier_opt();
+        match id {
+            None => {
+                let peek = self.peek_full();
+                panic!(
+                    "{}:{} Expected identifier as {}, but found `{}`",
+                    peek.line, peek.column, item_type, peek.kind
+                )
+            }
+            Some(id) => id,
+        }
+    }
+
+    pub(crate) fn identifier_opt(&mut self) -> Option<String> {
+        let peek = self.peek_full();
+        match peek.kind {
             // We might have to add more here.
-            // For now we have only encountered keywords `property`, `option` and `stop`
             // Probably the `unused` keyword will also be added here
             T![ident]
             | T![property]
@@ -434,13 +507,87 @@ where
             | T![step]
             | T![default]
             | T![set]
-            | T![me] => self.text(&ident).to_string(),
-            _ => panic!(
-                "{}:{} Expected identifier as {}, but found `{}`",
-                ident.line, ident.column, item_type, ident.kind
-            ),
-        };
-        name
+            | T![error]
+            | T![me] => self.next().map(|token| self.text(&token).to_string()),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn member_identifier(&mut self) -> String {
+        const ITEM_TYPE: &str = "member identifier";
+        let ident = self.next().unwrap_or_else(|| {
+            let peek_full = self.peek_full();
+            panic!(
+                "{}:{} Tried to parse {}, but there were no more tokens",
+                peek_full.line, peek_full.column, ITEM_TYPE
+            )
+        });
+        match ident.kind {
+            T![ident]
+            | T![true]
+            | T![false]
+            | T![not]
+            | T![and]
+            | T![or]
+            | T![xor]
+            | T![eqv]
+            | T![imp]
+            | T![mod]
+            | T![is]
+            | T![call]
+            | T![dim]
+            | T![sub]
+            | T![function]
+            | T![get]
+            | T![let]
+            | T![const]
+            | T![if]
+            | T![else]
+            | T![elseif]
+            | T![end]
+            | T![then]
+            | T![exit]
+            | T![while]
+            | T![wend]
+            | T![do]
+            | T![loop]
+            | T![until]
+            | T![for]
+            | T![to]
+            | T![each]
+            | T![in]
+            | T![select]
+            | T![case]
+            | T![byref]
+            | T![byval]
+            | T![option]
+            | T![nothing]
+            | T![empty]
+            | T![null]
+            | T![class]
+            | T![set]
+            | T![new]
+            | T![public]
+            | T![private]
+            | T![next]
+            | T![on]
+            | T![resume]
+            | T![goto]
+            | T![with]
+            | T![redim]
+            | T![preserve]
+            | T![property]
+            | T![me]
+            | T![stop]
+            | T![step] => self.text(&ident).to_string(),
+            _ => {
+                let peek = self.peek_full();
+                panic!(
+                    "{}:{} Expected identifier as {}, but found `{}`",
+                    peek.line, peek.column, ITEM_TYPE, ident.kind
+                )
+            }
+        }
     }
 
     /// Parse a block of statements until we reach an `end` token.
@@ -510,7 +657,15 @@ where
             // property, stop, option, step was added here because it can also be used as identifier
             // TODO find a better way to handle this without copy pasting
             //   see `identifier()`
-            T![ident] | T![me] | T![.] | T![property] | T![stop] | T![option] | T![step] => {
+            T![ident]
+            | T![me]
+            | T![.]
+            | T![property]
+            | T![stop]
+            | T![option]
+            | T![step]
+            | T![default]
+            | T![error] => {
                 // multiple options here
                 // 1. assignment
                 // 2. sub call without args
@@ -1047,7 +1202,7 @@ where
                 // The property itself is allowed to be prefixed with whitespace.
                 T![_.] => {
                     self.consume(T![_.]);
-                    let property = self.identifier("property");
+                    let property = self.member_identifier();
                     lhs = Expr::MemberExpression {
                         base: Box::new(lhs),
                         property,
@@ -1086,6 +1241,7 @@ where
             | T![stop]
             | T![option]
             | T![step]
+            | T![error]
             | T![default]
             | T![set] => {
                 //let full_ident = self.ident_deep();
@@ -1297,7 +1453,7 @@ mod test {
     }
 
     #[test]
-    #[should_panic(expected = "0:0 Expected identifier as property, but found `<EOF>`")]
+    #[should_panic(expected = "Expected a token, but found EOF")]
     fn test_parse_ident_deep_fail_with_trailing_dot() {
         let input = "a.b.";
         let mut parser = Parser::new(input);

@@ -85,7 +85,7 @@ where
             // The property itself is allowed to be prefixed with whitespace.
             if op == T![_.] {
                 self.consume(T![_.]);
-                let property = self.identifier("property name");
+                let property = self.member_identifier();
                 lhs = Expr::MemberExpression {
                     base: Box::new(lhs),
                     property,
@@ -204,7 +204,10 @@ where
                     })),
                     T![string_literal] => Lit::Str(
                         // trim the quotation marks
-                        literal_text[1..(literal_text.len() - 1)].to_string(),
+                        // replace double quotes with single quotes
+                        literal_text[1..(literal_text.len() - 1)]
+                            .to_string()
+                            .replace("\"\"", "\""),
                     ),
                     T![date_time_literal] => {
                         // drop the # prefix and suffix
@@ -229,22 +232,11 @@ where
             return Expr::Literal(literal);
         }
 
+        if let Some(ident) = self.identifier_opt() {
+            return Expr::ident(ident);
+        }
+
         match self.peek() {
-            // TODO deduplicate this list with identifier()
-            //   we have seen these tokens being used as identifiers
-            T![ident]
-            | T![me]
-            | T![property]
-            | T![stop]
-            | T![option]
-            | T![step]
-            | T![default]
-            | T![set] => {
-                //let full_ident = self.ident_deep();
-                //Expr::IdentFnSubCall(full_ident)
-                let ident = self.identifier("expression identifier");
-                Expr::ident(ident)
-            }
             T![.] => {
                 self.consume(T![.]);
                 let ident = self.consume(T![ident]);

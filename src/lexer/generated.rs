@@ -271,7 +271,7 @@ pub(super) enum LogosToken {
     #[regex(r"_[ \t\f]*(\r\n?|\n)", newline_callback)]
     LineContinuation((usize, usize)),
 
-    // comments using ' or REM
+    // comments using ' or REM but not x.rem
     #[regex(r"(?i)'([^\r\n]*)|rem ([^\r\n]*)")]
     Comment,
 }
