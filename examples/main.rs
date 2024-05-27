@@ -34,9 +34,7 @@ fn lex_and_print_strings(input: &str) {
         {
             println!(
                 "Found a string at line {}, row {}: {}",
-                token.line,
-                token.column,
-                &input[token.span]
+                token.line, token.column, &input[token.span]
             );
         }
     }
