@@ -156,28 +156,8 @@ where
         self.consume(T![end]);
         self.consume(T![class]);
         self.consume_line_delimiter();
-        Self::validate_class(&members, &methods, &dims);
-        Item::Class {
-            name,
-            members,
-            dims,
-            member_accessors,
-            methods,
-        }
-    }
-
-    fn validate_class(
-        members: &Vec<MemberDefinitions>,
-        methods: &Vec<Stmt>,
-        dims: &Vec<Vec<(String, Option<Vec<usize>>)>>,
-    ) {
-        // TODO add line numbers to the error messages
-        //   we will probably have to inline this to get those
-        // TODO check if there are some checks to do on member accessors
-        // if there are any duplicates in the members or methods (case-insensitive)
-        // we should return an error
         let mut member_names = HashSet::new();
-        for member in members {
+        for member in &members {
             for (name, _) in &member.properties {
                 let lower = name.to_ascii_lowercase();
                 if member_names.contains(&lower) {
@@ -186,7 +166,7 @@ where
                 member_names.insert(lower);
             }
         }
-        for dim in dims {
+        for dim in &dims {
             for (name, _) in dim {
                 let lower = name.to_ascii_lowercase();
                 if member_names.contains(&lower) {
@@ -195,7 +175,7 @@ where
                 member_names.insert(lower);
             }
         }
-        for method in methods {
+        for method in &methods {
             if let Stmt::Sub { name, .. } = method {
                 let lower = name.to_ascii_lowercase();
                 if member_names.contains(&lower) {
@@ -210,6 +190,13 @@ where
                 }
                 member_names.insert(lower);
             }
+        }
+        Item::Class {
+            name,
+            members,
+            dims,
+            member_accessors,
+            methods,
         }
     }
 
