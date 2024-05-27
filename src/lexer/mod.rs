@@ -8,6 +8,11 @@ mod generated;
 mod token;
 
 //pub type Lexer<'input> = CustomLexer<'input>;
+/// A lexer for the VBA language.
+/// This splits the input into tokens.
+///
+/// The end of the input is marked by a `TokenKind::EOF` token.
+/// Any token that is not recognized is returned as a `TokenKind::ParseError`.
 pub type Lexer<'input> = LogosLexer<'input>;
 
 pub struct LogosLexer<'input> {

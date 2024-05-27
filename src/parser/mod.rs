@@ -1,9 +1,30 @@
+use std::fmt::Debug;
 use crate::{lexer::*, T};
 use std::iter::Peekable;
 
 pub mod ast;
 mod expressions;
 mod hierarchy;
+
+pub struct ParseError {
+    message: String,
+    line: usize,
+    column: usize,
+}
+
+
+impl ParseError {
+    pub fn new<S: Into<String>>(message: S, line: usize, column: usize) -> Self {
+        Self { message: message.into(), line, column }
+    }
+}
+
+
+impl Debug for ParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ParseError at line {}, column {}: {}", self.line, self.column, self.message)
+    }
+}
 
 pub struct Parser<'input, I>
 where
@@ -39,10 +60,11 @@ where
             .unwrap_or(T![EOF])
     }
 
-    pub(crate) fn peek_full(&mut self) -> &Token {
-        self.tokens
-            .peek()
-            .unwrap_or_else(|| panic!("Expected a token, but found EOF"))
+    pub(crate) fn peek_full(&mut self) -> Result<&Token, ParseError> {
+        match self.tokens.peek() {
+            Some(token) => Ok(token),
+            None => Err(ParseError::new("Expected a token, but found EOF".to_string(),0,0)),
+        }
     }
 
     /// Check if the next token is some `kind` of token.
@@ -57,24 +79,25 @@ where
 
     /// Move forward one token in the input and check
     /// that we pass the kind of token we expect.
-    pub(crate) fn consume(&mut self, expected: TokenKind) -> Token {
-        let token = self.next().unwrap_or_else(|| {
-            panic!(
-                "Expected to consume `{}`, but there was no next token",
-                expected
-            )
-        });
-        if token.kind != expected {
-            panic!(
-                "{}:{} Expected to consume `{}`, but found `{}`",
-                token.line, token.column, expected, token.kind
-            );
-        }
-        token
+    pub(crate) fn consume(&mut self, expected: TokenKind) -> Result<Token, ParseError> {
+    let token = self.next().ok_or_else(|| {
+        ParseError::new(
+        format!(
+            "Expected to consume `{}`, but there was no next token",
+            expected
+        ), 0,0)
+    })?;
+    if token.kind != expected {
+        return Err( ParseError::new( format!(
+            "Expected to consume `{}`, but found `{}`",
+            expected, token.kind
+        ),token.line, token.column, ));
     }
+    Ok(token)
+}
 
-    pub(crate) fn consume_line_delimiter(&mut self) {
-        let peek = self.peek_full();
+    pub(crate) fn consume_line_delimiter(&mut self) -> Result<(), ParseError>{
+        let peek = self.peek_full()?;
         match peek.kind {
             T![EOF] => {}
             T![end] => {}
@@ -88,16 +111,25 @@ where
                     self.consume(T![nl]);
                 }
             }
-            other => panic!(
-                "{}:{} Unexpected token Expected newline or colon, but found {}",
-                peek.line, peek.column, other
+            other =>
+                return Err(ParseError::new(
+                    format!(
+                        "Unexpected token Expected newline or colon, but found {}",
+                        other
+                    ),
+                    peek.line,
+                    peek.column,
+                )
             ),
-        }
+        };
+        Ok(())
     }
 
-    fn consume_optional_line_delimiter(&mut self) {
+    fn consume_optional_line_delimiter(&mut self) -> Result<(), ParseError> {
         if matches!(self.peek(), T![nl] | T![:]) {
-            self.consume_line_delimiter();
+            self.consume_line_delimiter()
+        } else {
+            Ok(())
         }
     }
 
@@ -177,7 +209,17 @@ mod test {
 
     fn parse(input: &str) -> Expr {
         let mut parser = Parser::new(input);
-        parser.expression()
+        parser.expression().unwrap()
+    }
+
+    fn parse_file(input: &str) -> Vec<Item> {
+        let mut parser = Parser::new(input);
+        parser.file().unwrap()
+    }
+
+    fn parse_stmt(input: &str, consume_line_delimiter: bool) -> Stmt {
+        let mut parser = Parser::new(input);
+        parser.statement(consume_line_delimiter).unwrap()
     }
 
     #[test]
@@ -188,8 +230,7 @@ mod test {
              _
                 , y
         "#};
-        let mut parser = Parser::new(input);
-        let file = parser.file();
+        let file = parse_file(input);
         assert_eq!(
             file,
             vec![Item::Statement(Stmt::Dim {
@@ -254,7 +295,7 @@ Const a = 1			' some info
         let expr = parse(r#""I am a String!""#);
         assert_eq!(expr, Expr::str("I am a String!".to_string()));
         let expr = parse("foo");
-        assert_eq!(expr, ast::Expr::ident("foo"));
+        assert_eq!(expr, Expr::ident("foo"));
         let expr = parse("bar (  x, 2)");
         assert_eq!(
             expr,
@@ -310,14 +351,14 @@ Const a = 1			' some info
             Expr::FnApplication {
                 callee: Box::new(Expr::ident("min")),
                 args: vec![
-                    Some(Expr::InfixOp {
+                    Some(InfixOp {
                         op: T![+],
                         lhs: Box::new(Expr::ident("test")),
                         rhs: Box::new(Expr::int(4)),
                     }),
                     Some(Expr::FnApplication {
                         callee: Box::new(Expr::ident("sin")),
-                        args: vec![Some(Expr::InfixOp {
+                        args: vec![Some(InfixOp {
                             op: T![*],
                             lhs: Box::new(Expr::int(2)),
                             rhs: Box::new(Expr::ident("PI")),
@@ -336,12 +377,11 @@ Const a = 1			' some info
                 x = 4
             end if
         "#};
-        let mut parser = Parser::new(input);
-        let stmt = parser.statement(true);
+        let stmt = parse_stmt(input,true);
         assert_eq!(
             stmt,
             Stmt::IfStmt {
-                condition: Box::new(Expr::InfixOp {
+                condition: Box::new(InfixOp {
                     op: T![>],
                     lhs: Box::new(Expr::ident("x")),
                     rhs: Box::new(Expr::int(2)),
@@ -363,19 +403,18 @@ Const a = 1			' some info
                 x=x+1
             Wend
         "#};
-        let mut parser = Parser::new(input);
-        let stmt = parser.statement(true);
+        let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
             Stmt::WhileStmt {
-                condition: Box::new(Expr::InfixOp {
+                condition: Box::new(InfixOp {
                     op: T![<],
                     lhs: Box::new(Expr::ident("x")),
                     rhs: Box::new(Expr::int(5)),
                 }),
                 body: vec![Stmt::Assignment {
                     full_ident: FullIdent::ident("x"),
-                    value: Box::new(Expr::InfixOp {
+                    value: Box::new(InfixOp {
                         op: T![+],
                         lhs: Box::new(Expr::ident("x")),
                         rhs: Box::new(Expr::int(1)),
@@ -388,12 +427,11 @@ Const a = 1			' some info
     #[test]
     fn test_while_single_line() {
         let input = r#"while skipIdx = skipIdx2:skipIdx2=Int(Rnd*6):wend"#;
-        let mut parser = Parser::new(input);
-        let items = parser.file();
+        let items = parse_file(input);
         assert_eq!(
             items,
             vec![Item::Statement(Stmt::WhileStmt {
-                condition: Box::new(Expr::InfixOp {
+                condition: Box::new(InfixOp {
                     op: T![=],
                     lhs: Box::new(Expr::ident("skipIdx")),
                     rhs: Box::new(Expr::ident("skipIdx2")),
@@ -402,7 +440,7 @@ Const a = 1			' some info
                     full_ident: FullIdent::ident("skipIdx2"),
                     value: Box::new(Expr::FnApplication {
                         callee: Box::new(Expr::ident("Int")),
-                        args: vec![Some(Expr::InfixOp {
+                        args: vec![Some(InfixOp {
                             op: T![*],
                             lhs: Box::new(Expr::ident("Rnd")),
                             rhs: Box::new(Expr::int(6)),
@@ -420,8 +458,7 @@ Const a = 1			' some info
                 x = x + i
             Next
         "#};
-        let mut parser = Parser::new(input);
-        let stmt = parser.statement(true);
+        let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
             Stmt::ForStmt {
@@ -431,7 +468,7 @@ Const a = 1			' some info
                 step: None,
                 body: vec![Stmt::Assignment {
                     full_ident: FullIdent::ident("x"),
-                    value: Box::new(Expr::InfixOp {
+                    value: Box::new(InfixOp {
                         op: T![+],
                         lhs: Box::new(Expr::ident("x")),
                         rhs: Box::new(Expr::ident("i")),
@@ -449,8 +486,7 @@ Const a = 1			' some info
                 If x > 10 Then Exit For
             Next
         "#};
-        let mut parser = Parser::new(input);
-        let stmt = parser.statement(true);
+        let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
             Stmt::ForStmt {
@@ -461,14 +497,14 @@ Const a = 1			' some info
                 body: vec![
                     Stmt::Assignment {
                         full_ident: FullIdent::ident("x"),
-                        value: Box::new(Expr::InfixOp {
+                        value: Box::new(InfixOp {
                             op: T![*],
                             lhs: Box::new(Expr::ident("x")),
                             rhs: Box::new(Expr::ident("i")),
                         }),
                     },
                     Stmt::IfStmt {
-                        condition: Box::new(Expr::InfixOp {
+                        condition: Box::new(InfixOp {
                             op: T![>],
                             lhs: Box::new(Expr::ident("x")),
                             rhs: Box::new(Expr::int(10)),
@@ -489,8 +525,7 @@ Const a = 1			' some info
                 ' do nothing
             Next
         "#};
-        let mut parser = Parser::new(input);
-        let file = parser.file();
+        let file = parse_file(input);
         assert_eq!(
             file,
             vec![Item::Statement(Stmt::ForStmt {
@@ -506,15 +541,14 @@ Const a = 1			' some info
     #[test]
     fn parse_for_inline() {
         let input = "For x = 1 To PlayerMode(currentplayer)+1 : Blink(x,1)=1 : Next";
-        let mut parser = Parser::new(input);
-        let stmt = parser.statement(true);
+        let stmt = parse_stmt(input, true);
         #[rustfmt::skip]
         assert_eq!(
             stmt,
             Stmt::ForStmt {
                 counter: "x".to_string(),
                 start: Box::new(Expr::int(1)),
-                end: Box::new(Expr::InfixOp {
+                end: Box::new(InfixOp {
                     op: T![+],
                     lhs: Box::new(Expr::fn_application(
                         Expr::ident("PlayerMode"),
@@ -541,8 +575,7 @@ Const a = 1			' some info
                 dog.visible = true
             Next
         "#};
-        let mut parser = Parser::new(input);
-        let stmt = parser.statement(true);
+        let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
             Stmt::ForEachStmt {
@@ -564,8 +597,7 @@ Const a = 1			' some info
         let input = indoc! {r#"
             For each dog in dogs : dog.volume = 0 : dog.visible = true : Next
         "#};
-        let mut parser = Parser::new(input);
-        let stmt = parser.statement(true);
+        let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
             Stmt::ForEachStmt {
@@ -593,7 +625,7 @@ Const a = 1			' some info
             End Function
         "#};
         let mut parser = Parser::new(input);
-        let item = parser.item();
+        let item = parser.item().unwrap();
         assert_eq!(
             item,
             Item::Statement(Stmt::Function {
@@ -605,7 +637,7 @@ Const a = 1			' some info
                 ],
                 body: vec![Stmt::Assignment {
                     full_ident: FullIdent::ident("add"),
-                    value: Box::new(Expr::InfixOp {
+                    value: Box::new(InfixOp {
                         op: T![+],
                         lhs: Box::new(Expr::ident("a")),
                         rhs: Box::new(Expr::ident("b")),
@@ -623,8 +655,7 @@ Const a = 1			' some info
                 'print b
             End Sub
         "#};
-        let mut parser = Parser::new(input);
-        let stmt = parser.statement(true);
+        let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
             Stmt::Sub {
@@ -645,8 +676,7 @@ Const a = 1			' some info
             private Sub log
             End Sub
         "#};
-        let mut parser = Parser::new(input);
-        let stmt = parser.statement(true);
+        let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
             Stmt::Sub {
@@ -661,8 +691,7 @@ Const a = 1			' some info
     #[test]
     fn parse_inline_sub_declaration() {
         let input = "Sub Trigger003_hit : RampWireRight.x = 0.1 : Light030.state = 0 : End Sub";
-        let mut parser = Parser::new(input);
-        let stmt = parser.statement(true);
+        let stmt = parse_stmt(input, true);
         #[rustfmt::skip]
         assert_eq!(
             stmt,
@@ -699,8 +728,7 @@ Const a = 1			' some info
                 End Sub
             End If
         "#};
-        let mut parser = Parser::new(input);
-        let file = parser.file();
+        let file = parse_file(input);
         assert_eq!(
             file,
             vec![Item::Statement(Stmt::IfStmt {
@@ -725,8 +753,7 @@ Const a = 1			' some info
                 End If
             End Sub
         "#};
-        let mut parser = Parser::new(input);
-        let stmt = parser.statement(true);
+        let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
             Stmt::Sub {
@@ -734,7 +761,7 @@ Const a = 1			' some info
                 name: "Trigger1_Hit".to_string(),
                 parameters: vec![],
                 body: vec![Stmt::IfStmt {
-                    condition: Box::new(Expr::InfixOp {
+                    condition: Box::new(InfixOp {
                         op: T![=],
                         lhs: Box::new(Expr::ident("BIP")),
                         rhs: Box::new(Expr::int(1)),
@@ -757,8 +784,7 @@ Const a = 1			' some info
                 'print a
             End Sub
         "#};
-        let mut parser = Parser::new(input);
-        let stmt = parser.statement(true);
+        let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
             Stmt::Sub {
@@ -780,8 +806,7 @@ Const a = 1			' some info
                 test2 = a
             End Function
         "#};
-        let mut parser = Parser::new(input);
-        let all = parser.file();
+        let all = parse_file(input);
         assert_eq!(
             all,
             vec![
@@ -807,32 +832,28 @@ Const a = 1			' some info
     #[test]
     fn test_parse_file_empty() {
         let input = "";
-        let mut parser = Parser::new(input);
-        let all = parser.file();
+        let all = parse_file(input);
         assert_eq!(all, vec![]);
     }
 
     #[test]
     fn test_parse_file_empty_with_newlines() {
         let input = "\r\n\n\n\r\n";
-        let mut parser = Parser::new(input);
-        let all = parser.file();
+        let all = parse_file(input);
         assert_eq!(all, vec![]);
     }
 
     #[test]
     fn test_parse_file_empty_with_colons() {
         let input = ":: ::";
-        let mut parser = Parser::new(input);
-        let all = parser.file();
+        let all = parse_file(input);
         assert_eq!(all, vec![]);
     }
 
     #[test]
     fn test_parse_file_empty_with_colon_and_newline() {
         let input = ":\r\n";
-        let mut parser = Parser::new(input);
-        let all = parser.file();
+        let all = parse_file(input);
         assert_eq!(all, vec![]);
     }
 
@@ -844,8 +865,7 @@ Const a = 1			' some info
             REM This is a rem comment
 
             ' This is another comment without newline"};
-        let mut parser = Parser::new(input);
-        let all = parser.file();
+        let all = parse_file(input);
         assert_eq!(all, vec![]);
     }
 
@@ -854,16 +874,14 @@ Const a = 1			' some info
         let input = indoc! {"
             Option Explicit ' Force explicit variable declaration.
             ' This is another comment"};
-        let mut parser = Parser::new(input);
-        let all = parser.file();
+        let all = parse_file(input);
         assert_eq!(all, vec![Item::OptionExplicit,]);
     }
 
     #[test]
     fn parse_option_and_randomize_on_single_line() {
         let input = "Option Explicit : Randomize";
-        let mut parser = Parser::new(input);
-        let all = parser.file();
+        let all = parse_file(input);
         assert_eq!(
             all,
             vec![
@@ -879,8 +897,7 @@ Const a = 1			' some info
     #[test]
     fn test_parse_no_arg_sub_call() {
         let input = "SayHello";
-        let mut parser = Parser::new(input);
-        let all = parser.file();
+        let all = parse_file(input);
         assert_eq!(
             all,
             vec![Item::Statement(Stmt::SubCall {
@@ -897,8 +914,7 @@ Const a = 1			' some info
             test 1
             test 1, 2"
         };
-        let mut parser = Parser::new(input);
-        let all = parser.file();
+        let all = parse_file(input);
         assert_eq!(
             all,
             vec![
@@ -924,8 +940,8 @@ Const a = 1			' some info
             On Error Resume Next
             On Error GoTo 0
         "};
-        let mut parser = Parser::new(input);
-        let all = parser.file();
+
+        let all = parse_file(input);
         assert_eq!(
             all,
             vec![
@@ -942,8 +958,7 @@ Const a = 1			' some info
     #[test]
     fn test_single_line_if() {
         let input = r#"If Err Then MsgBox "Oh noes""#;
-        let mut parser = Parser::new(input);
-        let stmt = parser.statement(true);
+        let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
             Stmt::IfStmt {
@@ -961,8 +976,7 @@ Const a = 1			' some info
     #[test]
     fn test_single_line_if_multi_statement() {
         let input = r#"If Err Then MsgBox "Oh noes": MsgBox "Crash""#;
-        let mut parser = Parser::new(input);
-        let stmt = parser.statement(true);
+        let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
             Stmt::IfStmt {
@@ -986,12 +1000,11 @@ Const a = 1			' some info
     #[test]
     fn test_singe_line_if_with_end_if() {
         let input = r#"if VRRoom > 0 Then bbs006.state = x2 Else controller.B2SSetData 50,x2 : controller.B2SSetData 53,x2 : End If"#;
-        let mut parser = Parser::new(input);
-        let stmt = parser.statement(true);
+        let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
             Stmt::IfStmt {
-                condition: Box::new(Expr::InfixOp {
+                condition: Box::new(InfixOp {
                     op: T![>],
                     lhs: Box::new(Expr::ident("VRRoom")),
                     rhs: Box::new(Expr::int(0)),
@@ -1024,12 +1037,11 @@ Const a = 1			' some info
     #[test]
     fn parse_if_end_if_single_line_no_colons() {
         let input = r#"if a=1 then DoSomething() end if"#;
-        let mut parser = Parser::new(input);
-        let stmt = parser.statement(true);
+        let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
             Stmt::IfStmt {
-                condition: Box::new(Expr::InfixOp {
+                condition: Box::new(InfixOp {
                     op: T![=],
                     lhs: Box::new(Expr::ident("a")),
                     rhs: Box::new(Expr::int(1)),
@@ -1051,14 +1063,13 @@ Const a = 1			' some info
     fn test_single_line_if_with_many_colons() {
         let input =
             r#"If x < 0 Or Err Then : DoSomething obj : Else : DoSomethingElse obj : End If"#;
-        let mut parser = Parser::new(input);
-        let stmt = parser.statement(true);
+        let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
             Stmt::IfStmt {
-                condition: Box::new(Expr::InfixOp {
+                condition: Box::new(InfixOp {
                     op: T![or],
-                    lhs: Box::new(Expr::InfixOp {
+                    lhs: Box::new(InfixOp {
                         op: T![<],
                         lhs: Box::new(Expr::ident("x")),
                         rhs: Box::new(Expr::int(0)),
@@ -1084,14 +1095,13 @@ Const a = 1			' some info
             If(x <> "") Then LutValue = CDbl(x) Else LutValue = 1
 	        If LutValue < 1 Then LutValue = 1
         "#;
-        let mut parser = Parser::new(input);
-        let file = parser.file();
+        let file = parse_file(input);
         #[rustfmt::skip]
         assert_eq!(
             file,
             vec![
                 Item::Statement(Stmt::IfStmt {
-                    condition: Box::new(Expr::InfixOp {
+                    condition: Box::new(InfixOp {
                         op: T![<>],
                         lhs: Box::new(Expr::ident("x")),
                         rhs: Box::new(Expr::Literal(Lit::Str("".to_string()))),
@@ -1110,7 +1120,7 @@ Const a = 1			' some info
                     }]),
                 }),
                 Item::Statement(Stmt::IfStmt {
-                    condition: Box::new(Expr::InfixOp {
+                    condition: Box::new(InfixOp {
                         op: T![<],
                         lhs: Box::new(Expr::ident("LutValue")),
                         rhs: Box::new(Expr::int(1)),
@@ -1129,12 +1139,11 @@ Const a = 1			' some info
     #[test]
     fn test_parse_if_single_line_with_else() {
         let input = r#"If x > 2 Then y = 3 Else y = 4"#;
-        let mut parser = Parser::new(input);
-        let stmt = parser.statement(true);
+        let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
             Stmt::IfStmt {
-                condition: Box::new(Expr::InfixOp {
+                condition: Box::new(InfixOp {
                     op: T![>],
                     lhs: Box::new(Expr::ident("x")),
                     rhs: Box::new(Expr::int(2)),
@@ -1155,12 +1164,11 @@ Const a = 1			' some info
     #[test]
     fn test_if_nested_single_line() {
         let input = "If key = 1 Then foo.fire: If bar=1 then DoSomething() else DoSomethingElse()";
-        let mut parser = Parser::new(input);
-        let stmt = parser.statement(true);
+        let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
             Stmt::IfStmt {
-                condition: Box::new(Expr::InfixOp {
+                condition: Box::new(InfixOp {
                     op: T![=],
                     lhs: Box::new(Expr::ident("key")),
                     rhs: Box::new(Expr::int(1)),
@@ -1171,7 +1179,7 @@ Const a = 1			' some info
                         args: vec![],
                     },
                     Stmt::IfStmt {
-                        condition: Box::new(Expr::InfixOp {
+                        condition: Box::new(InfixOp {
                             op: T![=],
                             lhs: Box::new(Expr::ident("bar")),
                             rhs: Box::new(Expr::int(1)),
@@ -1206,18 +1214,17 @@ Const a = 1			' some info
             If This Or That Then DoSomething 'weird comment
         End If
         "#};
-        let mut parser = Parser::new(input);
-        let stmt = parser.file();
+        let stmt = parse_file(input);
         assert_eq!(
             stmt,
             vec![Item::Statement(Stmt::IfStmt {
-                condition: Box::new(Expr::InfixOp {
+                condition: Box::new(InfixOp {
                     op: T![>],
                     lhs: Box::new(Expr::ident("x")),
                     rhs: Box::new(Expr::int(2)),
                 }),
                 body: vec![Stmt::IfStmt {
-                    condition: Box::new(Expr::InfixOp {
+                    condition: Box::new(InfixOp {
                         op: T![or],
                         lhs: Box::new(Expr::ident("This")),
                         rhs: Box::new(Expr::ident("That")),
@@ -1245,12 +1252,11 @@ Const a = 1			' some info
                 End If
             End If
         "#};
-        let mut parser = Parser::new(input);
-        let stmt = parser.statement(true);
+        let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
             Stmt::IfStmt {
-                condition: Box::new(Expr::InfixOp {
+                condition: Box::new(InfixOp {
                     op: T![=],
                     lhs: Box::new(Expr::ident("a")),
                     rhs: Box::new(Expr::int(3)),
@@ -1261,7 +1267,7 @@ Const a = 1			' some info
                 }],
                 elseif_statements: vec![],
                 else_stmt: Some(vec![Stmt::IfStmt {
-                    condition: Box::new(Expr::InfixOp {
+                    condition: Box::new(InfixOp {
                         op: T![=],
                         lhs: Box::new(Expr::ident("a")),
                         rhs: Box::new(Expr::int(2)),
@@ -1280,16 +1286,14 @@ Const a = 1			' some info
     #[test]
     fn parse_dim() {
         let input = "Dim x";
-        let mut parser = Parser::new(input);
-        let stmt = parser.statement(true);
+        let stmt = parse_stmt(input, true);
         assert_eq!(stmt, Stmt::dim("x"));
     }
 
     #[test]
     fn test_dim_array() {
         let input = "Dim x(1, 2)";
-        let mut parser = Parser::new(input);
-        let stmt = parser.statement(true);
+        let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
             Stmt::Dim {
@@ -1301,8 +1305,7 @@ Const a = 1			' some info
     #[test]
     fn test_dim_array_with_space() {
         let input = "Dim PlayerMode (2)";
-        let mut parser = Parser::new(input);
-        let stmt = parser.statement(true);
+        let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
             Stmt::Dim {
@@ -1314,8 +1317,7 @@ Const a = 1			' some info
     #[test]
     fn parse_dim_multiple() {
         let input = "Dim x,y, z(1 + 3)";
-        let mut parser = Parser::new(input);
-        let stmt = parser.statement(true);
+        let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
             Stmt::Dim {
@@ -1324,7 +1326,7 @@ Const a = 1			' some info
                     ("y".to_string(), vec![]),
                     (
                         "z".to_string(),
-                        vec![Expr::InfixOp {
+                        vec![InfixOp {
                             op: T![+],
                             lhs: Box::new(Expr::int(1)),
                             rhs: Box::new(Expr::int(3)),
@@ -1338,24 +1340,21 @@ Const a = 1			' some info
     #[test]
     fn parse_const() {
         let input = "Const x = 42";
-        let mut parser = Parser::new(input);
-        let stmt = parser.statement(true);
+        let stmt = parse_stmt(input, true);
         assert_eq!(stmt, Stmt::const_("x", Lit::int(42)));
     }
 
     #[test]
     fn parse_const_negative() {
         let input = "Const x = -1";
-        let mut parser = Parser::new(input);
-        let stmt = parser.statement(true);
+        let stmt = parse_stmt(input, true);
         assert_eq!(stmt, Stmt::const_("x", Lit::int(-1)));
     }
 
     #[test]
     fn parse_const_multi() {
         let input = r#"const x = 42, txt = "Hello""#;
-        let mut parser = Parser::new(input);
-        let stmt = parser.statement(true);
+        let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
             Stmt::Const(vec![
@@ -1371,8 +1370,7 @@ Const a = 1			' some info
             Const x = 42 ' The answer to everything
             Const y = 13 ' An unlucky number
         "};
-        let mut parser = Parser::new(input);
-        let all = parser.file();
+        let all = parse_file(input);
         assert_eq!(
             all,
             vec![
@@ -1394,8 +1392,7 @@ Const a = 1			' some info
             Const Test = False
             Const Test2 = True
         "#};
-        let mut parser = Parser::new(input);
-        let all = parser.file();
+        let all = parse_file(input);
         assert_eq!(
             all,
             vec![
@@ -1416,8 +1413,7 @@ Const a = 1			' some info
         let input = indoc! {r#"
             Private Const Test = -1
         "#};
-        let mut parser = Parser::new(input);
-        let all = parser.file();
+        let all = parse_file(input);
         assert_eq!(
             all,
             vec![Item::Const {
@@ -1433,8 +1429,7 @@ Const a = 1			' some info
             Public x, y(1,2)
             Private z, a(1), b()
         "#};
-        let mut parser = Parser::new(input);
-        let all = parser.file();
+        let all = parse_file(input);
         assert_eq!(
             all,
             vec![
@@ -1463,7 +1458,7 @@ Const a = 1			' some info
                 Private Const Test = 1
             End Sub
         "#};
-        Parser::new(input).file();
+        Parser::new(input).file().unwrap();
     }
 
     #[test]
@@ -1472,8 +1467,7 @@ Const a = 1			' some info
             Set foo = bar
             Set Obj(x) = NullFader
         "#};
-        let mut parser = Parser::new(input);
-        let file = parser.file();
+        let file = parse_file(input);
         #[rustfmt::skip]
         assert_eq!(
             file,
@@ -1498,8 +1492,7 @@ Const a = 1			' some info
     #[test]
     fn test_set_using_new() {
         let input = "Set foo = New Bar";
-        let mut parser = Parser::new(input);
-        let items = parser.file();
+        let items = parse_file(input);
         assert_eq!(
             items,
             vec![Item::Statement(Stmt::Set {
@@ -1513,8 +1506,7 @@ Const a = 1			' some info
     fn test_set_using_new_parentheses() {
         // This creates a new class, calls a default function that returns Me
         let input = "Set DT1 = (new DropTarget)(1, 0, False)";
-        let mut parser = Parser::new(input);
-        let items = parser.file();
+        let items = parse_file(input);
         assert_eq!(
             items,
             vec![Item::Statement(Stmt::Set {
@@ -1530,8 +1522,7 @@ Const a = 1			' some info
     #[test]
     fn test_set_using_nothing() {
         let input = "Set foo = Nothing";
-        let mut parser = Parser::new(input);
-        let items = parser.file();
+        let items = parse_file(input);
         assert_eq!(
             items,
             vec![Item::Statement(Stmt::Set {
@@ -1544,8 +1535,7 @@ Const a = 1			' some info
     #[test]
     fn parse_set_deep() {
         let input = "Set lampz.obj(x) = 1";
-        let mut parser = Parser::new(input);
-        let items = parser.file();
+        let items = parse_file(input);
         #[rustfmt::skip]
         assert_eq!(
             items,
@@ -1568,17 +1558,16 @@ Const a = 1			' some info
     #[test]
     fn test_redim() {
         let input = "Redim Preserve tmp(uBound(aArray) + uBound(aInput)+1)";
-        let mut parser = Parser::new(input);
-        let items = parser.file();
+        let items = parse_file(input);
         assert_eq!(
             items,
             vec![Item::Statement(Stmt::ReDim {
                 preserve: true,
                 var_bounds: vec![(
                     "tmp".to_string(),
-                    vec![Expr::InfixOp {
+                    vec![InfixOp {
                         op: T![+],
-                        lhs: Box::new(Expr::InfixOp {
+                        lhs: Box::new(InfixOp {
                             op: T![+],
                             lhs: Box::new(Expr::FnApplication {
                                 callee: Box::new(Expr::ident("uBound")),
@@ -1599,8 +1588,7 @@ Const a = 1			' some info
     #[test]
     fn parse_redim_multi() {
         let input = "Redim a(length), b(2, 3)";
-        let mut parser = Parser::new(input);
-        let stmt = parser.statement(true);
+        let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
             Stmt::ReDim {
@@ -1625,14 +1613,13 @@ Const a = 1			' some info
                 test = 0
             End If
         "#};
-        let mut parser = Parser::new(input);
-        let items = parser.file();
+        let items = parse_file(input);
         assert_eq!(
             items,
             vec![
                 Item::Statement(Stmt::dim("test")),
                 Item::Statement(Stmt::IfStmt {
-                    condition: Box::new(Expr::InfixOp {
+                    condition: Box::new(InfixOp {
                         op: T![=],
                         lhs: Box::new(Expr::ident("RenderingMode")),
                         rhs: Box::new(Expr::int(2)),
@@ -1648,7 +1635,7 @@ Const a = 1			' some info
                         }
                     ],
                     elseif_statements: vec![(
-                        Box::new(Expr::InfixOp {
+                        Box::new(InfixOp {
                             op: T![=],
                             lhs: Box::new(Expr::ident("RenderingMode")),
                             rhs: Box::new(Expr::int(3)),
@@ -1676,8 +1663,7 @@ Const a = 1			' some info
     #[test]
     fn test_assignment_with_negative_int() {
         let input = "x = -1";
-        let mut parser = Parser::new(input);
-        let items = parser.file();
+        let items = parse_file(input);
         assert_eq!(
             items,
             vec![Item::Statement(Stmt::Assignment {
@@ -1693,8 +1679,7 @@ Const a = 1			' some info
     #[test]
     fn test_assignment_to_object_in_array_property() {
         let input = r#"objectArray(i).image = "test""#;
-        let mut parser = Parser::new(input);
-        let items = parser.file();
+        let items = parse_file(input);
         assert_eq!(
             items,
             vec![Item::Statement(Stmt::Assignment {
@@ -1713,8 +1698,7 @@ Const a = 1			' some info
     #[test]
     fn test_assignment_with_property_in_expression() {
         let input = "foo.a = foo.b-120.5";
-        let mut parser = Parser::new(input);
-        let items = parser.file();
+        let items = parse_file(input);
         #[rustfmt::skip]
         assert_eq!(
             items,
@@ -1722,7 +1706,7 @@ Const a = 1			' some info
                 FullIdent::new(
                     Expr::member(Expr::ident("foo"), "a")
                 ),
-                Expr::InfixOp {
+                InfixOp {
                     op: T![-],
                     lhs: Box::new(Expr::member(Expr::ident("foo"), "b")),
                     rhs: Box::new(Expr::Literal(Lit::Float(120.5))),
@@ -1744,8 +1728,7 @@ Const a = 1			' some info
                     y = 4
             End Select
         "#};
-        let mut parser = Parser::new(input);
-        let items = parser.file();
+        let items = parse_file(input);
         assert_eq!(
             items,
             vec![Item::Statement(Stmt::SelectCase {
@@ -1784,22 +1767,21 @@ Const a = 1			' some info
                     z = 3
             End Select
         "#};
-        let mut parser = Parser::new(input);
-        let items = parser.file();
+        let items = parse_file(input);
         assert_eq!(
             items,
             vec![Item::Statement(Stmt::SelectCase {
                 test_expr: Box::new(Expr::Literal(Lit::Bool(true))),
                 cases: vec![
                     Case {
-                        tests: vec![Expr::InfixOp {
+                        tests: vec![InfixOp {
                             op: T![and],
-                            lhs: Box::new(Expr::InfixOp {
+                            lhs: Box::new(InfixOp {
                                 op: T![=],
                                 lhs: Box::new(Expr::ident("x")),
                                 rhs: Box::new(Expr::int(1)),
                             }),
-                            rhs: Box::new(Expr::InfixOp {
+                            rhs: Box::new(InfixOp {
                                 op: T![=],
                                 lhs: Box::new(Expr::ident("y")),
                                 rhs: Box::new(Expr::int(2)),
@@ -1812,12 +1794,12 @@ Const a = 1			' some info
                     },
                     Case {
                         tests: vec![
-                            Expr::InfixOp {
+                            InfixOp {
                                 op: T![=],
                                 lhs: Box::new(Expr::ident("x")),
                                 rhs: Box::new(Expr::int(1)),
                             },
-                            Expr::InfixOp {
+                            InfixOp {
                                 op: T![=],
                                 lhs: Box::new(Expr::ident("y")),
                                 rhs: Box::new(Expr::int(2)),
@@ -1842,8 +1824,7 @@ Const a = 1			' some info
                 Case Else: y = 4
             End Select
         "#};
-        let mut parser = Parser::new(input);
-        let items = parser.file();
+        let items = parse_file(input);
         assert_eq!(
             items,
             vec![Item::Statement(Stmt::SelectCase {
@@ -1872,8 +1853,7 @@ Const a = 1			' some info
 			    Case Else    DoNothing
             End Select
         "#};
-        let mut parser = Parser::new(input);
-        let items = parser.file();
+        let items = parse_file(input);
         assert_eq!(
             items,
             vec![Item::Statement(Stmt::SelectCase {
@@ -1919,8 +1899,7 @@ Const a = 1			' some info
                     bInService=False
             End Select
         "#};
-        let mut parser = Parser::new(input);
-        let items = parser.file();
+        let items = parse_file(input);
         assert_eq!(
             items,
             vec![Item::Statement(Stmt::SelectCase {
@@ -1944,15 +1923,14 @@ Const a = 1			' some info
                 Controller.Run
             End If
         "#};
-        let mut parser = Parser::new(input);
-        let stmt = parser.statement(true);
+        let stmt = parse_stmt(input, true);
         #[rustfmt::skip]
         assert_eq!(
             stmt,
             Stmt::IfStmt {
                 condition: Box::new(Expr::PrefixOp {
                     op: T![not],
-                    expr: Box::new(Expr::InfixOp {
+                    expr: Box::new(InfixOp {
                         op: T![is],
                         lhs: Box::new(Expr::ident("Controller")),
                         rhs: Box::new(Expr::Literal(Lit::Nothing)),
@@ -1976,8 +1954,7 @@ Const a = 1			' some info
     #[test]
     fn test_sub_call_with_empty_args() {
         let input = r#"DoSomething 1,,"test""#;
-        let mut parser = Parser::new(input);
-        let stmt = parser.statement(true);
+        let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
             Stmt::SubCall {
@@ -1992,8 +1969,7 @@ Const a = 1			' some info
         let input = indoc! {r#"
             Class NullFadingObject : Public Property Let IntensityScale(input) : : End Property : End Class
         "#};
-        let mut parser = Parser::new(input);
-        let items = parser.file();
+        let items = parse_file(input);
         assert_eq!(
             items,
             vec![Item::Class {
@@ -2020,8 +1996,7 @@ Const a = 1			' some info
                 Private Qux(1), Baz
             End Class
         "#};
-        let mut parser = Parser::new(input);
-        let items = parser.file();
+        let items = parse_file(input);
         assert_eq!(
             items,
             vec![Item::Class {
@@ -2057,8 +2032,7 @@ Const a = 1			' some info
                 Dim Qux(1), Baz
             End Class
         "#};
-        let mut parser = Parser::new(input);
-        let items = parser.file();
+        let items = parse_file(input);
         assert_eq!(
             items,
             vec![Item::Class {
@@ -2093,8 +2067,7 @@ Const a = 1			' some info
                 End Sub
             End Class
         "#};
-        let mut parser = Parser::new(input);
-        let items = parser.file();
+        let items = parse_file(input);
         assert_eq!(
             items,
             vec![Item::Class {
@@ -2135,8 +2108,7 @@ Const a = 1			' some info
                 x = .qux
             End With
         "#};
-        let mut parser = Parser::new(input);
-        let items = parser.file();
+        let items = parse_file(input);
         #[rustfmt::skip]
         assert_eq!(
             items,
@@ -2151,7 +2123,7 @@ Const a = 1			' some info
                     Stmt::Assignment {
                         full_ident: FullIdent::new(
                             Expr::member(
-                                Expr::WithScoped,
+                                WithScoped,
                                 "bar"
                             )
                         ),
@@ -2161,7 +2133,7 @@ Const a = 1			' some info
                         full_ident: FullIdent::new(
                             Expr::member(
                                 Expr::member(
-                                    Expr::WithScoped,
+                                    WithScoped,
                                     "baz"
                                 ),
                                 "z"
@@ -2172,7 +2144,7 @@ Const a = 1			' some info
                     Stmt::Assignment {
                         full_ident: FullIdent::ident("x"),
                         value: Box::new(Expr::member(
-                            Expr::WithScoped,
+                            WithScoped,
                             "qux"
                         )),
                     },
@@ -2187,8 +2159,7 @@ Const a = 1			' some info
             Dim LutToggleSoundLevel : 
             LutToggleSoundLevel = 0.5
         "#};
-        let mut parser = Parser::new(input);
-        let items = parser.file();
+        let items = parse_file(input);
         assert_eq!(
             items,
             vec![
@@ -2206,8 +2177,7 @@ Const a = 1			' some info
     #[test]
     fn test_parse_double_array_access() {
         let input = "foo(1)(2) = 3";
-        let mut parser = Parser::new(input);
-        let stmt = parser.statement(true);
+        let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
             Stmt::Assignment {
@@ -2227,8 +2197,7 @@ Const a = 1			' some info
             Call MyOtherFunction(1, 2)
             Call mQue3(ii)(mQue2(ii))
         "#};
-        let mut parser = Parser::new(input);
-        let items = parser.file();
+        let items = parse_file(input);
         #[rustfmt::skip]
         assert_eq!(
             items,
@@ -2261,31 +2230,31 @@ Const a = 1			' some info
 
         // sub call for object element in multi-dimensional array
         let input = "arr(0,0).s";
-        Parser::new(input).statement(true);
+        parse_stmt(input, true);
 
         // sub call with single argument being parenthesized expression
         let input = "DoSomething(x)";
-        Parser::new(input).statement(true);
+        parse_stmt(input, true);
 
         // assignment to multi-dimensional array element
         let input = "arr(0,0) = 1";
-        Parser::new(input).statement(true);
+        parse_stmt(input, true);
 
         // this is accepted on windows, why?
         let input = "something(0)(0)";
-        Parser::new(input).statement(true);
+        parse_stmt(input, true);
 
         // deep sub call from within a multidimensional array
         let input = "arr(0,0).DoSomething(x)";
-        Parser::new(input).statement(true);
+        parse_stmt(input, true);
 
         // sub call with first arg expression
         let input = "DoSomething (x + y) * z";
-        Parser::new(input).statement(true);
+        parse_stmt(input, true);
 
         // sub call with comma after first arg in brackets
         let input = "DoSomething (x + 1), 2";
-        Parser::new(input).statement(true);
+        parse_stmt(input, true);
     }
 
     #[test]
@@ -2294,13 +2263,13 @@ Const a = 1			' some info
         // Windows: compilation error: Expected end of statement
         // TODO make these tests pass
         let input = "DoSomething(),0";
-        Parser::new(input).statement(true);
+        parse_stmt(input, true);
     }
 
     #[test]
     fn test_statement_do_not_expect_end() {
         let input = "DoSomething(1),0";
-        let stmt = Parser::new(input).statement(true);
+        let stmt = parse_stmt(input,true);
         assert_eq!(
             stmt,
             Stmt::SubCall {
@@ -2315,7 +2284,7 @@ Const a = 1			' some info
     fn test_statement_no_parenthesis_when_calling_sub() {
         // compilation error: Cannot use parentheses when calling a Sub
         let input = "DoSomething(0,0)";
-        Parser::new(input).statement(true);
+        parse_stmt(input,true);
     }
 
     #[test]
@@ -2323,7 +2292,7 @@ Const a = 1			' some info
     fn test_statement_no_parenthesis_when_calling_deep_sub() {
         // compilation error: Cannot use parentheses when calling a Sub
         let input = "SomeArray(1,2).DoSomething(0,0,3)";
-        Parser::new(input).statement(true);
+        parse_stmt(input,true);
     }
 
     #[test]
@@ -2331,7 +2300,7 @@ Const a = 1			' some info
     fn test_statement_no_parenthesis_when_calling_sub_and_invalid_statement() {
         // compilation error: Cannot use parentheses when calling a Sub
         let input = "something(0,0) + 1";
-        Parser::new(input).statement(true);
+        parse_stmt(input,true);
     }
 
     #[test]
@@ -2340,9 +2309,7 @@ Const a = 1			' some info
         // but here they are part of the sub call first argument.
         // Would the space in front of the parens make a difference?
         let input = "DoSomething (x + y) * z";
-
-        let mut parser = Parser::new(input);
-        let stmt = parser.statement(true);
+        let stmt = parse_stmt(input,true);
         assert_eq!(
             stmt,
             Stmt::SubCall {
@@ -2366,9 +2333,7 @@ Const a = 1			' some info
         // but here they are part of the sub call first argument.
         // Would the space in front of the parens make a difference?
         let input = "DoSomething z * (x + y)";
-
-        let mut parser = Parser::new(input);
-        let stmt = parser.statement(true);
+        let stmt = parse_stmt(input,true);
         assert_eq!(
             stmt,
             Stmt::SubCall {
@@ -2390,9 +2355,7 @@ Const a = 1			' some info
     fn test_parse_function_or_array_call_with_parens() {
         // This is tricky because the parens are used for both function calls, array access
         let input = "x = AddScore(x + y) * z";
-
-        let mut parser = Parser::new(input);
-        let stmt = parser.statement(true);
+        let stmt = parse_stmt(input,true);
         assert_eq!(
             stmt,
             Stmt::Assignment {
@@ -2416,8 +2379,7 @@ Const a = 1			' some info
     #[test]
     fn parse_dim_call_with_nested_empty_args() {
         let input = r#"MySub MyFn(0, , -1)"#;
-        let mut parser = Parser::new(input);
-        let stmt = parser.statement(true);
+        let stmt = parse_stmt(input,true);
         assert_eq!(
             stmt,
             Stmt::SubCall {
@@ -2440,8 +2402,7 @@ Const a = 1			' some info
     #[test]
     fn test_parse_function_single_line_with_colons() {
         let input = "Function NullFunction(a) : End Function";
-        let mut parser = Parser::new(input);
-        let items = parser.file();
+        let items = parse_file(input);
         assert_eq!(
             items,
             vec![Item::Statement(Stmt::Function {
@@ -2456,8 +2417,7 @@ Const a = 1			' some info
     #[test]
     fn test_parse_function_single_line_without_colons() {
         let input = "Function NullFunction(a) End Function";
-        let mut parser = Parser::new(input);
-        let items = parser.file();
+        let items = parse_file(input);
         assert_eq!(
             items,
             vec![Item::Statement(Stmt::Function {
@@ -2476,19 +2436,18 @@ Const a = 1			' some info
                 x = x - 1
             Loop
         "#};
-        let mut parser = Parser::new(input);
-        let items = parser.file();
+        let items = parse_file(input);
         assert_eq!(
             items,
             vec![Item::Statement(Stmt::DoLoop {
-                check: DoLoopCheck::Pre(DoLoopCondition::While(Box::new(Expr::InfixOp {
+                check: DoLoopCheck::Pre(DoLoopCondition::While(Box::new(InfixOp {
                     op: T![>],
                     lhs: Box::new(Expr::ident("x")),
                     rhs: Box::new(Expr::int(0)),
                 }))),
                 body: vec![Stmt::Assignment {
                     full_ident: FullIdent::ident("x"),
-                    value: Box::new(Expr::InfixOp {
+                    value: Box::new(InfixOp {
                         op: T![-],
                         lhs: Box::new(Expr::ident("x")),
                         rhs: Box::new(Expr::int(1)),
@@ -2505,19 +2464,19 @@ Const a = 1			' some info
                 x = x - 1
             Loop
         "#};
-        let mut parser = Parser::new(input);
-        let items = parser.file();
+
+        let items = parse_file(input);
         assert_eq!(
             items,
             vec![Item::Statement(Stmt::DoLoop {
-                check: DoLoopCheck::Pre(DoLoopCondition::Until(Box::new(Expr::InfixOp {
+                check: DoLoopCheck::Pre(DoLoopCondition::Until(Box::new(InfixOp {
                     op: T![=],
                     lhs: Box::new(Expr::ident("x")),
                     rhs: Box::new(Expr::int(0)),
                 }))),
                 body: vec![Stmt::Assignment {
                     full_ident: FullIdent::ident("x"),
-                    value: Box::new(Expr::InfixOp {
+                    value: Box::new(InfixOp {
                         op: T![-],
                         lhs: Box::new(Expr::ident("x")),
                         rhs: Box::new(Expr::int(1)),
@@ -2534,19 +2493,18 @@ Const a = 1			' some info
                 x = x - 1
             Loop While x > 0
         "#};
-        let mut parser = Parser::new(input);
-        let items = parser.file();
+        let items = parse_file(input);
         assert_eq!(
             items,
             vec![Item::Statement(Stmt::DoLoop {
-                check: DoLoopCheck::Post(DoLoopCondition::While(Box::new(Expr::InfixOp {
+                check: DoLoopCheck::Post(DoLoopCondition::While(Box::new(InfixOp {
                     op: T![>],
                     lhs: Box::new(Expr::ident("x")),
                     rhs: Box::new(Expr::int(0)),
                 }))),
                 body: vec![Stmt::Assignment {
                     full_ident: FullIdent::ident("x"),
-                    value: Box::new(Expr::InfixOp {
+                    value: Box::new(InfixOp {
                         op: T![-],
                         lhs: Box::new(Expr::ident("x")),
                         rhs: Box::new(Expr::int(1)),
@@ -2563,19 +2521,18 @@ Const a = 1			' some info
                 x = x - 1
             Loop Until x = 0
         "#};
-        let mut parser = Parser::new(input);
-        let items = parser.file();
+        let items = parse_file(input);
         assert_eq!(
             items,
             vec![Item::Statement(Stmt::DoLoop {
-                check: DoLoopCheck::Post(DoLoopCondition::Until(Box::new(Expr::InfixOp {
+                check: DoLoopCheck::Post(DoLoopCondition::Until(Box::new(InfixOp {
                     op: T![=],
                     lhs: Box::new(Expr::ident("x")),
                     rhs: Box::new(Expr::int(0)),
                 }))),
                 body: vec![Stmt::Assignment {
                     full_ident: FullIdent::ident("x"),
-                    value: Box::new(Expr::InfixOp {
+                    value: Box::new(InfixOp {
                         op: T![-],
                         lhs: Box::new(Expr::ident("x")),
                         rhs: Box::new(Expr::int(1)),
@@ -2593,8 +2550,7 @@ Const a = 1			' some info
                 If x = 0 Then Exit Do
             Loop
         "#};
-        let mut parser = Parser::new(input);
-        let items = parser.file();
+        let items = parse_file(input);
         assert_eq!(
             items,
             vec![Item::Statement(Stmt::DoLoop {
@@ -2602,14 +2558,14 @@ Const a = 1			' some info
                 body: vec![
                     Stmt::Assignment {
                         full_ident: FullIdent::ident("x"),
-                        value: Box::new(Expr::InfixOp {
+                        value: Box::new(InfixOp {
                             op: T![-],
                             lhs: Box::new(Expr::ident("x")),
                             rhs: Box::new(Expr::int(1)),
                         }),
                     },
                     Stmt::IfStmt {
-                        condition: Box::new(Expr::InfixOp {
+                        condition: Box::new(InfixOp {
                             op: T![=],
                             lhs: Box::new(Expr::ident("x")),
                             rhs: Box::new(Expr::int(0)),
@@ -2626,15 +2582,14 @@ Const a = 1			' some info
     #[test]
     fn test_property_access_in_args_without_space() {
         let input = "Foo 1,.enabled";
-        let mut parser = Parser::new(input);
-        let stmt = parser.statement(true);
+        let stmt = parse_stmt(input,true);
         assert_eq!(
             stmt,
             Stmt::SubCall {
                 fn_name: FullIdent::ident("Foo"),
                 args: vec![
                     Some(Expr::int(1)),
-                    Some(Expr::member(Expr::WithScoped, "enabled")),
+                    Some(Expr::member(WithScoped, "enabled")),
                 ],
             }
         );
@@ -2643,8 +2598,7 @@ Const a = 1			' some info
     #[test]
     fn test_step_as_identifier() {
         let input = "x=y.Step";
-        let mut parser = Parser::new(input);
-        let stmt = parser.statement(true);
+        let stmt = parse_stmt(input,true);
         #[rustfmt::skip]
         assert_eq!(
             stmt,
@@ -2661,8 +2615,7 @@ Const a = 1			' some info
     #[test]
     fn test_error_as_identifier() {
         let input = "Dim Error: Error = 42";
-        let mut parser = Parser::new(input);
-        let file = parser.file();
+        let file = parse_file(input);
         #[rustfmt::skip]
         assert_eq!(
             file,
@@ -2685,8 +2638,7 @@ Const a = 1			' some info
                 if true Then x = 1:
             end Sub
         "#};
-        let mut parser = Parser::new(input);
-        let file = parser.file();
+        let file = parse_file(input);
         #[rustfmt::skip]
         assert_eq!(
             file,
@@ -2738,8 +2690,7 @@ Const a = 1			' some info
                 End Function
             End Class
         "#};
-        let mut parser = Parser::new(input);
-        let file = parser.file();
+        let file = parse_file(input);
         #[rustfmt::skip]
         assert_eq!(
             file,
@@ -2805,8 +2756,7 @@ Const a = 1			' some info
             Dim property
             property = 5
         "#};
-        let mut parser = Parser::new(input);
-        let file = parser.file();
+        let file = parse_file(input);
         #[rustfmt::skip]
         assert_eq!(
             file,
@@ -2855,8 +2805,7 @@ Const a = 1			' some info
         let input = indoc! {r#"
             Call ok(error = "xx", "error = " & error & " expected ""xx""")
         "#};
-        let mut parser = Parser::new(input);
-        let file = parser.file();
+        let file = parse_file(input);
         #[rustfmt::skip]
         assert_eq!(
             file,
@@ -2865,14 +2814,14 @@ Const a = 1			' some info
                     Expr::fn_application(
                         Expr::ident("ok"),
                         vec![
-                            Expr::InfixOp {
+                            InfixOp {
                                 op: T![=],
                                 lhs: Box::new(Expr::ident("error")),
                                 rhs: Box::new(Expr::str("xx")),
                             },
-                            Expr::InfixOp {
+                            InfixOp {
                                 op: T![&],
-                                lhs: Box::new(Expr::InfixOp {
+                                lhs: Box::new(InfixOp {
                                     op: T![&],
                                     lhs: Box::new(Expr::str("error = ")),
                                     rhs: Box::new(Expr::ident("error")),
@@ -2984,9 +2933,7 @@ Const a = 1			' some info
                 value: Box::new(Expr::int(10)),
             })
         }
-
-        let mut parser = Parser::new(input);
-        let file = parser.file();
+        let file = parse_file(input);
         #[rustfmt::skip]
         assert_eq!(
             file,
@@ -3055,8 +3002,7 @@ Const a = 1			' some info
     #[test]
     fn sub_with_member_check() {
         let input = "MySub \"test\"&.prop";
-        let mut parser = Parser::new(input);
-        let stmt = parser.statement(true);
+        let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
             Stmt::SubCall {
@@ -3064,7 +3010,7 @@ Const a = 1			' some info
                 args: vec![Some(InfixOp {
                     op: T![&],
                     lhs: Box::new(Expr::str("test")),
-                    rhs: Box::new(Expr::member(Expr::WithScoped, "prop")),
+                    rhs: Box::new(Expr::member(WithScoped, "prop")),
                 })],
             }
         );

@@ -4,7 +4,7 @@ use crate::parser::ast::{
     Argument, ArgumentType, Case, DoLoopCheck, DoLoopCondition, ErrorClause, Expr, FullIdent, Item,
     MemberAccess, MemberDefinitions, PropertyType, PropertyVisibility, SetRhs, Stmt, Visibility,
 };
-use crate::parser::{ast, Parser};
+use crate::parser::{ast, ParseError, Parser};
 use crate::T;
 use std::collections::HashSet;
 
@@ -12,26 +12,26 @@ impl<'input, I> Parser<'input, I>
 where
     I: Iterator<Item = Token>,
 {
-    pub fn file(&mut self) -> Vec<ast::Item> {
+    pub fn file(&mut self) -> Result<Vec<Item>, ParseError> {
         let mut items = Vec::new();
         while !self.at(T![EOF]) {
             // Skip newlines, our token iter newline handling can't catch all cases
             // one example is ":\r\n".
             if self.at(T![nl]) {
-                self.consume(T![nl]);
+                self.consume(T![nl])?;
                 continue;
             }
             let item = self.item();
             items.push(item);
         }
-        items
+        Ok(items)
     }
 
-    pub fn item(&mut self) -> ast::Item {
-        match self.peek() {
-            T![option] => self.item_option(),
+    pub fn item(&mut self) ->  Result<Item, ParseError> {
+        let item = match self.peek() {
+            T![option] => self.item_option()?,
             vis @ T![public] | vis @ T![private] => {
-                let visibility = match self.consume(vis).kind {
+                let visibility = match self.consume(vis)?.kind {
                     T![public] => Visibility::Public,
                     T![private] => Visibility::Private,
                     _ => unreachable!(),
@@ -40,22 +40,26 @@ where
                 match self.peek() {
                     T![function] => {
                         let item = Item::Statement(self.statement_function(visibility));
-                        self.consume_line_delimiter();
+                        self.consume_line_delimiter()?;
                         item
                     }
                     T![sub] => {
                         let item = Item::Statement(self.statement_sub(visibility));
-                        self.consume_line_delimiter();
+                        self.consume_line_delimiter()?;
                         item
                     }
                     T![const] => self.item_const(visibility),
                     T![ident] => self.item_variable(visibility),
                     _ => {
-                        let peek = self.peek_full();
-                        panic!(
-                            "Expected `function`, `sub` or `const` after visibility at line {}, column {} but found `{}`",
-                            peek.line, peek.column, peek.kind
-                        )
+                        let peek = self.peek_full()?;
+                        return Err(ParseError::new(
+                            format!(
+                                "Expected `function`, `sub` or `const` after visibility, but found `{}`",
+                                peek.kind
+                            ),
+                            peek.line,
+                            peek.column,
+                        ));
                     }
                 }
             }
@@ -66,7 +70,8 @@ where
                 let stmt = self.statement(true);
                 Item::Statement(stmt)
             }
-        }
+        };
+        Ok(item)
     }
 
     fn item_const(&mut self, visibility: Visibility) -> Item {
@@ -104,10 +109,10 @@ where
         Item::Variable { visibility, vars }
     }
 
-    fn item_class(&mut self) -> Item {
-        self.consume(T![class]);
+    fn item_class(&mut self) -> Result<Item, ParseError> {
+        self.consume(T![class])?;
         let name = self.identifier("class name");
-        self.consume_line_delimiter();
+        self.consume_line_delimiter()?;
         let mut members = Vec::new();
         let mut member_accessors = Vec::new();
         let mut methods = Vec::new();
@@ -115,47 +120,51 @@ where
         while !self.at(T![end]) {
             let mut default = None;
             let visibility = if self.at(T![public]) {
-                self.consume(T![public]);
+                self.consume(T![public])?;
                 if self.at(T![default]) {
-                    self.consume(T![default]);
+                    self.consume(T![default])?;
                     default = Some(true);
                 }
                 Visibility::Public
             } else if self.at(T![private]) {
-                self.consume(T![private]);
+                self.consume(T![private])?;
                 Visibility::Private
             } else {
                 Visibility::Default
             };
 
             match self.peek() {
-                T![property] => member_accessors.push(self.class_property(default, visibility)),
-                T![function] => methods.push(self.class_function(visibility)),
-                T![sub] => methods.push(self.class_sub(visibility)),
+                T![property] => member_accessors.push(self.class_property(default, visibility)?),
+                T![function] => methods.push(self.class_function(visibility)?),
+                T![sub] => methods.push(self.class_sub(visibility)?),
                 T![dim] => {
                     // visibility can not be set for dims
                     if visibility != Visibility::Default {
-                        let peek = self.peek_full();
-                        panic!(
-                            "Class dim does not support visibility at line {}, column {} but found '{}'",
-                            peek.line, peek.column, peek.kind
-                        )
+                        let peek = self.peek_full()?;
+                        return Err(ParseError::new(
+                            format!(
+                                "Class dim does not support visibility but found '{}'",
+                                peek.line,
+                            ),
+                            peek.line,
+                            peek.column,
+                        ));
                     }
-                    dims.push(self.class_dim());
+                    dims.push(self.class_dim()?);
                 }
                 T![nl] => {
                     // Skip newlines, our token iter newline handling can't catch all cases
                     // one example is ":\r\n".
-                    self.consume(T![nl]);
+                    self.consume(T![nl])?;
                 }
                 _ => {
-                    members.push(self.class_member(visibility));
+                    members.push(self.class_member(visibility)?);
                 }
             }
         }
-        self.consume(T![end]);
-        self.consume(T![class]);
-        self.consume_line_delimiter();
+        self.consume(T![end])?;
+        self.consume(T![class])?;
+        self.consume_line_delimiter()?;
         let mut member_names = HashSet::new();
         for member in &members {
             for (name, _) in &member.properties {
@@ -191,6 +200,7 @@ where
                 member_names.insert(lower);
             }
         }
+        Ok(
         Item::Class {
             name,
             members,
@@ -198,12 +208,13 @@ where
             member_accessors,
             methods,
         }
+        )
     }
 
-    fn class_member(&mut self, visibility: Visibility) -> MemberDefinitions {
+    fn class_member(&mut self, visibility: Visibility) -> Result<MemberDefinitions, ParseError> {
         // properties
         if visibility == Visibility::Default {
-            let peek = self.peek_full();
+            let peek = self.peek_full()?;
             panic!(
                 "Expected visibility for class member at line {}, column {} but found '{}'",
                 peek.line, peek.column, peek.kind
@@ -212,74 +223,74 @@ where
         // like a dim we can have multiple properties in one line of which some can be arrays
         let mut properties = Vec::new();
         while {
-            let name = self.identifier("class member");
-            let bounds = self.const_bounds();
+            let name = self.identifier("class member")?;
+            let bounds = self.const_bounds()?;
             properties.push((name, bounds));
             self.at(T![,])
         } {
-            self.consume(T![,]);
+            self.consume(T![,])?;
         }
         let member_definitions = MemberDefinitions {
             visibility,
             properties,
         };
-        self.consume_line_delimiter();
-        member_definitions
+        self.consume_line_delimiter()?;
+        Ok(member_definitions)
     }
 
-    fn class_dim(&mut self) -> Vec<(String, Option<Vec<usize>>)> {
-        self.consume(T![dim]);
+    fn class_dim(&mut self) -> Result<Vec<(String, Option<Vec<usize>>)>, ParseError>{
+        self.consume(T![dim])?;
         let mut vars = Vec::new();
         while !self.at(T![nl]) && !self.at(T![EOF]) {
-            let ident = self.consume(T![ident]);
+            let ident = self.consume(T![ident])?;
             let name = self.text(&ident).to_string();
-            let bounds = self.const_bounds();
+            let bounds = self.const_bounds()?;
             vars.push((name, bounds));
             if self.at(T![,]) {
-                self.consume(T![,]);
+                self.consume(T![,])?;
             } else {
                 break;
             }
         }
-        self.consume_line_delimiter();
-        vars
+        self.consume_line_delimiter()?;
+        Ok(vars)
     }
 
-    fn class_sub(&mut self, visibility: Visibility) -> Stmt {
-        self.consume(T![sub]);
-        let method_name = self.identifier("Sub name");
-        let parameters = self.optional_declaration_parameter_list("Sub");
-        self.consume_line_delimiter();
-        let body = self.block(true, &[T![end]]);
-        self.consume(T![end]);
-        self.consume(T![sub]);
-        self.consume_line_delimiter();
-        Stmt::Sub {
+    fn class_sub(&mut self, visibility: Visibility) -> Result<Stmt, ParseError> {
+        self.consume(T![sub])?;
+        let method_name = self.identifier("Sub name")?;
+        let parameters = self.optional_declaration_parameter_list("Sub")?;
+        self.consume_line_delimiter()?;
+        let body = self.block(true, &[T![end]])?;
+        self.consume(T![end])?;
+        self.consume(T![sub])?;
+        self.consume_line_delimiter()?;
+        Ok(Stmt::Sub {
             visibility,
             name: method_name.clone(),
             parameters,
             body,
-        }
+        })
     }
 
-    fn class_function(&mut self, visibility: Visibility) -> Stmt {
-        self.consume(T![function]);
+    fn class_function(&mut self, visibility: Visibility) -> Result<Stmt, ParseError> {
+        self.consume(T![function])?;
         let method_name = self.identifier("Function name");
         let parameters = self.optional_declaration_parameter_list("Function");
-        self.consume_line_delimiter();
-        let body = self.block(true, &[T![end]]);
-        self.consume(T![end]);
-        self.consume(T![function]);
-        self.consume_line_delimiter();
-        Stmt::Function {
+        self.consume_line_delimiter()?;
+        let body = self.block(true, &[T![end]])?;
+        self.consume(T![end])?;
+        self.consume(T![function])?;
+        self.consume_line_delimiter()?;
+        Ok(Stmt::Function {
             visibility,
             name: method_name.clone(),
             parameters,
             body,
-        }
+        })
     }
 
-    fn class_property(&mut self, default: Option<bool>, visibility: Visibility) -> MemberAccess {
+    fn class_property(&mut self, default: Option<bool>, visibility: Visibility) -> Result<MemberAccess, ParseError> {
         let property_visibility = match visibility {
             Visibility::Public => PropertyVisibility::Public {
                 default: default.unwrap_or(false),
@@ -290,44 +301,47 @@ where
             },
         };
 
-        self.consume(T![property]);
+        self.consume(T![property])?;
         // let (Variant), get or set (Object)
         let property_type = match self.peek() {
             T![let] => {
-                self.consume(T![let]);
+                self.consume(T![let])?;
                 PropertyType::Let
             }
             T![set] => {
-                self.consume(T![set]);
+                self.consume(T![set])?;
                 PropertyType::Set
             }
             T![get] => {
-                self.consume(T![get]);
+                self.consume(T![get])?;
                 PropertyType::Get
             }
             other => {
-                let peek = self.peek_full();
-                panic!(
-                    "Expected `let`, `set` or `get` in class property definition at line {}, column {}, got `{}`",
-                    peek.line, peek.column, other
+                let peek = self.peek_full()?;
+                return Err(
+                    ParseError::new(
+                        format!("Expected `let`, `set` or `get` in class property definition, but found `{}`", other),
+                        peek.line,
+                        peek.column
+                    )
                 );
             }
         };
 
-        let name = self.identifier("property name");
-        let property_arguments = self.optional_parenthesized_property_arguments();
+        let name = self.identifier("property name")?;
+        let property_arguments = self.optional_parenthesized_property_arguments()?;
 
-        let property_body = self.block(true, &[T![end]]);
-        self.consume(T![end]);
-        self.consume(T![property]);
-        self.consume_line_delimiter();
-        MemberAccess {
+        let property_body = self.block(true, &[T![end]])?;
+        self.consume(T![end])?;
+        self.consume(T![property])?;
+        self.consume_line_delimiter()?;
+        Ok(MemberAccess {
             visibility: property_visibility,
             name,
             property_type,
             args: property_arguments,
             body: property_body,
-        }
+        })
     }
 
     fn item_option(&mut self) -> Item {
@@ -347,72 +361,90 @@ where
         Item::OptionExplicit
     }
 
-    fn statement_sub(&mut self, visibility: Visibility) -> Stmt {
-        self.consume(T![sub]);
+    fn statement_sub(&mut self, visibility: Visibility) -> Result<Stmt, ParseError> {
+        self.consume(T![sub])?;
 
-        let ident = self
-            .next()
-            .expect("Tried to parse sub name, but there were no more tokens");
-        assert_eq!(
-            ident.kind,
-            T![ident],
-            "Expected identifier as sub name, but found `{}`",
-            ident.kind
-        );
+        let ident = match self.next(){
+            Some(ident) => ident,
+            None => {
+                return Err(ParseError::new(
+                    "Tried to parse sub name, but there were no more tokens",
+                    0,
+                    0,
+                ));
+            }
+        };
+        if ident.kind != T![ident] {
+            return Err(ParseError::new(
+                format!("Expected identifier as sub name, but found `{}`", ident.kind),
+                ident.line,
+                ident.column,
+            ));
+        }
         let name = self.text(&ident).to_string();
-        let parameters = self.optional_declaration_parameter_list("Sub");
-        self.consume_optional_line_delimiter();
-        let body = self.block(true, &[T![end]]);
+        let parameters = self.optional_declaration_parameter_list("Sub")?;
+        self.consume_optional_line_delimiter()?;
+        let body = self.block(true, &[T![end]])?;
 
-        self.consume(T![end]);
-        self.consume(T![sub]);
+        self.consume(T![end])?;
+        self.consume(T![sub])?;
 
-        Stmt::Sub {
+        Ok(Stmt::Sub {
             visibility,
             name,
             parameters,
             body,
-        }
+        })
     }
 
-    fn statement_function(&mut self, visibility: Visibility) -> Stmt {
-        self.consume(T![function]);
+    fn statement_function(&mut self, visibility: Visibility) -> Result<Stmt, ParseError> {
+        self.consume(T![function])?;
 
-        let ident = self
-            .next()
-            .expect("Tried to parse function name, but there were no more tokens");
-        assert_eq!(
-            ident.kind,
-            T![ident],
-            "Expected identifier as function name, but found `{}`",
-            ident.kind
-        );
+        let ident = match self.next(){
+                Some(ident) => ident,
+                None => {
+                    return Err(ParseError::new(
+                        "Tried to parse function name, but there were no more tokens",
+                        0,
+                        0,
+                    ));
+        }};
+
+        if ident.kind != T![ident] {
+            return Err(ParseError::new(
+                format!("Expected identifier as function name, but found `{}`", ident.kind),
+                ident.line,
+                ident.column,
+            ));
+        }
         let name = self.text(&ident).to_string();
 
-        let parameters = self.optional_declaration_parameter_list("Function");
+        let parameters = self.optional_declaration_parameter_list("Function")?;
 
-        self.consume_optional_line_delimiter();
+        self.consume_optional_line_delimiter()?;
         // do we need to do something special with the returned value?
-        let body = self.block(true, &[T![end]]);
+        let body = self.block(true, &[T![end]])?;
 
-        self.consume(T![end]);
-        self.consume(T![function]);
+        self.consume(T![end])?;
+        self.consume(T![function])?;
 
+        Ok(
         Stmt::Function {
             visibility,
             name,
             parameters,
             body,
         }
+        )
     }
 
-    fn const_bounds(&mut self) -> Option<Vec<usize>> {
+    fn const_bounds(&mut self) -> Result<Option<Vec<usize>>, ParseError> {
         let mut bounds = None;
         if self.at(T!['(']) {
-            self.consume(T!['(']);
+            self.consume(T!['('])?;
             bounds = Some(vec![]);
             while !self.at(T![')']) {
-                let dim = self.consume(T![integer_literal]);
+                let dim = self.consume(T![integer_literal])?;
                 let dim: usize = match self.text(&dim).parse() {
                     Ok(dim) => dim,
                     Err(_) => panic!(
@@ -422,69 +454,68 @@ where
                 };
                 bounds.as_mut().unwrap().push(dim);
                 if self.at(T![,]) {
-                    self.consume(T![,]);
+                    self.consume(T![,])?;
                 }
             }
-            self.consume(T![')']);
+            self.consume(T![')'])?;
         }
-        bounds
+        Ok(bounds)
     }
 
     /// Parse a list of parameters for a function or sub declaration.
-    fn optional_declaration_parameter_list(&mut self, item_type: &str) -> Vec<Argument> {
+    fn optional_declaration_parameter_list(&mut self, item_type: &str) -> Result<Vec<Argument>, ParseError> {
         let mut parameters: Vec<Argument> = Vec::new();
         if self.at(T!['(']) {
-            self.consume(T!['(']);
+            self.consume(T!['('])?;
             while !self.at(T![')']) {
                 // see https://learn.microsoft.com/en-us/previous-versions/windows/internet-explorer/ie-developer/scripting-articles/tt223ahx(v=vs.84)
                 // optional modifier
                 let modifier = if self.at(T![byval]) {
-                    self.consume(T![byval]);
+                    self.consume(T![byval])?;
                     Argument::ByVal
                 } else if self.at(T![byref]) {
-                    self.consume(T![byref]);
+                    self.consume(T![byref])?;
                     Argument::ByRef
                 } else {
                     Argument::ByVal
                 };
 
-                let parameter_name = self.identifier(item_type);
+                let parameter_name = self.identifier(item_type)?;
                 // In case of array parameters there is a () allowed after the parameter name
                 // this is optional and totally unclear in the documentation
                 // so we just ignore it.
                 // I could not find any runtime validation that would fail if something is passed that
                 // is not an array.
                 if self.at(T!['(']) {
-                    self.consume(T!['(']);
-                    self.consume(T![')']);
+                    self.consume(T!['('])?;
+                    self.consume(T![')'])?;
                 }
                 parameters.push(modifier(parameter_name));
                 if self.at(T![,]) {
-                    self.consume(T![,]);
+                    self.consume(T![,])?;
                 }
             }
-            self.consume(T![')']);
+            self.consume(T![')'])?;
         }
-        parameters
+        Ok(parameters)
     }
 
-    pub(crate) fn identifier(&mut self, item_type: &str) -> String {
-        let id = self.identifier_opt();
+    pub(crate) fn identifier(&mut self, item_type: &str) -> Result<String, ParseError> {
+        let id = self.identifier_opt()?;
         match id {
             None => {
-                let peek = self.peek_full();
-                panic!(
-                    "{}:{} Expected identifier as {}, but found `{}`",
-                    peek.line, peek.column, item_type, peek.kind
+                let peek = self.peek_full()?;
+                Err(
+                    ParseError::new(format!("Expected identifier as {}, but found `{}`", item_type, peek.kind), peek.line, peek.column)
                 )
             }
-            Some(id) => id,
+            Some(id) => Ok(id),
         }
     }
 
-    pub(crate) fn identifier_opt(&mut self) -> Option<String> {
-        let peek = self.peek_full();
-        match peek.kind {
+    pub(crate) fn identifier_opt(&mut self) -> Result<Option<String>, ParseError> {
+        let peek = self.peek_full()?;
+        Ok(match peek.kind {
             // We might have to add more here.
             // Probably the `unused` keyword will also be added here
             T![ident]
@@ -497,18 +528,22 @@ where
             | T![error]
             | T![me] => self.next().map(|token| self.text(&token).to_string()),
             _ => None,
-        }
+        })
     }
 
-    pub(crate) fn member_identifier(&mut self) -> String {
+    pub(crate) fn member_identifier(&mut self) -> Result<String, ParseError> {
         const ITEM_TYPE: &str = "member identifier";
-        let ident = self.next().unwrap_or_else(|| {
-            let peek_full = self.peek_full();
-            panic!(
-                "{}:{} Tried to parse {}, but there were no more tokens",
-                peek_full.line, peek_full.column, ITEM_TYPE
-            )
-        });
+        let ident = match self.next(){
+            Some(ident) => ident,
+            None => {
+                let peek_full = self.peek_full()?;
+                return Err(ParseError::new(
+                    format!("Expected identifier as {}, but found `{}`", ITEM_TYPE, peek_full.kind),
+                    peek_full.line,
+                    peek_full.column,
+                ));
+            }
+        };
         match ident.kind {
             T![ident]
             | T![true]
@@ -566,40 +601,41 @@ where
             | T![property]
             | T![me]
             | T![stop]
-            | T![step] => self.text(&ident).to_string(),
+            | T![step] => Ok(self.text(&ident).to_string()),
             _ => {
-                panic!(
-                    "{}:{} Expected identifier as {}, but found `{}`",
-                    ident.line, ident.column, ITEM_TYPE, ident.kind
-                )
+                Err(ParseError::new(
+                    format!("Expected identifier as {}, but found `{}`", ITEM_TYPE, ident.kind),
+                    ident.line,
+                    ident.column,
+                ))
             }
         }
     }
 
     /// Parse a block of statements until we reach an `end` token.
-    pub fn block(&mut self, multi_line: bool, end_tokens: &[TokenKind]) -> Vec<Stmt> {
+    pub fn block(&mut self, multi_line: bool, end_tokens: &[TokenKind]) -> Result<Vec<Stmt>, ParseError> {
         let mut stmts = Vec::new();
         while !end_tokens.contains(&self.peek()) {
             if !self.at(T![nl]) && !self.at(T![:]) {
-                let stmt = self.statement(false);
+                let stmt = self.statement(false)?;
                 stmts.push(stmt);
             }
             if end_tokens.contains(&self.peek()) {
                 break;
             } else if self.at(T![nl]) {
                 if multi_line {
-                    self.consume(T![nl]);
+                    self.consume(T![nl])?;
                 } else {
                     break;
                 }
             } else if self.at(T![:]) {
-                self.consume(T![:]);
+                self.consume(T![:])?;
             }
         }
-        stmts
+        Ok(stmts)
     }
 
-    pub fn statement(&mut self, consume_delimiter: bool) -> Stmt {
+    pub fn statement(&mut self, consume_delimiter: bool) -> Result<Stmt, ParseError> {
         let stmt = match self.peek() {
             T![dim] => self.statement_dim(),
             T![redim] => self.statement_redim(),
@@ -619,11 +655,11 @@ where
             T![private] | T![public] => {
                 let visibility = match self.peek() {
                     T![public] => {
-                        self.consume(T![public]);
+                        self.consume(T![public])?;
                         Visibility::Public
                     }
                     T![private] => {
-                        self.consume(T![private]);
+                        self.consume(T![private])?;
                         Visibility::Private
                     }
                     _ => unreachable!(),
@@ -632,11 +668,12 @@ where
                     T![sub] => self.statement_sub(visibility),
                     T![function] => self.statement_function(visibility),
                     _ => {
-                        let full = self.peek_full();
-                        panic!(
-                            "{}:{} Expected `sub` or `function` after visibility, but found `{}`",
-                            full.line, full.column, full.kind
-                        )
+                        let full = self.peek_full()?;
+                        return Err(ParseError::new(
+                            format!("Expected `sub` or `function` after visibility, but found `{}`", full.kind),
+                            full.line,
+                            full.column,
+                        ));
                     }
                 }
             }
@@ -665,49 +702,50 @@ where
                 //
                 // Invalid:
                 // 1. array access (fails at runtime with 'Type mismatch')
-                let ident = self.ident_deep();
+                let ident = self.ident_deep()?;
                 if self.at(T![=]) {
                     // assignment
-                    self.consume(T![=]);
-                    let value = self.expression();
-                    Stmt::Assignment {
+                    self.consume(T![=])?;
+                    let value = self.expression()?;
+                    Ok(Stmt::Assignment {
                         full_ident: ident,
                         value: Box::new(value),
-                    }
+                    })
                 } else if self.at_new_line_or_eof() {
                     // sub call without args
-                    self.fail_if_using_parentheses_when_calling_sub(&ident);
-                    Stmt::SubCall {
+                    self.fail_if_using_parentheses_when_calling_sub(&ident)?;
+                    Ok(Stmt::SubCall {
                         fn_name: ident,
                         args: Vec::new(),
-                    }
+                    })
                 } else {
-                    self.fail_if_using_empty_parentheses_when_calling_sub(&ident);
+                    self.fail_if_using_empty_parentheses_when_calling_sub(&ident)?;
 
                     // sub call with args
-                    self.fail_if_using_parentheses_when_calling_sub(&ident);
+                    self.fail_if_using_parentheses_when_calling_sub(&ident)?;
 
                     let (patched_ident, part_of_expression) = Self::fix_sub_ident(ident);
-                    let args = self.sub_arguments(part_of_expression);
+                    let args = self.sub_arguments(part_of_expression)?;
 
-                    Stmt::SubCall {
+                    Ok(Stmt::SubCall {
                         fn_name: patched_ident,
                         args,
-                    }
+                    })
                 }
             }
             unexpected => {
-                let full = self.peek_full();
-                panic!(
-                    "{}:{} Unexpected token: {}",
-                    full.line, full.column, unexpected,
-                );
+                let full = self.peek_full()?;
+                return Err(ParseError::new(
+                    format!("Unexpected token: {}", unexpected),
+                    full.line,
+                    full.column,
+                ));
             }
-        };
+        }?;
         if consume_delimiter {
-            self.consume_line_delimiter();
+            self.consume_line_delimiter()?;
         }
-        stmt
+        Ok(stmt)
     }
 
     /// When calling a Sub
@@ -737,15 +775,16 @@ where
     /// These however are valid: `Foo(1), 1` (translates to `Foo 1, 1`) and `Foo()`
     ///
     /// WScript returns: 'compilation error: Expected end of statement'
-    fn fail_if_using_empty_parentheses_when_calling_sub(&mut self, ident: &FullIdent) {
+    fn fail_if_using_empty_parentheses_when_calling_sub(&mut self, ident: &FullIdent) -> Result<(), ParseError> {
         let inner = &ident.0;
         if let Expr::FnApplication { args, .. } = &**inner {
             if args.is_empty() && self.at(T![,]) {
-                let full = self.peek_full();
-                panic!(
-                    "{}:{} compilation error: Expected end of statement",
-                    full.line, full.column
-                );
+                let full = self.peek_full()?;
+                return Err(ParseError::new(
+                    "compilation error: Expected end of statement",
+                    full.line,
+                    full.column,
+                ));
             }
         }
     }
@@ -754,28 +793,30 @@ where
     /// However a sub call statement like `something(2)` is valid as the `(2)` is considered the first argument
     ///
     /// WScript returns: 'compilation error: Cannot use parentheses when calling a Sub'
-    fn fail_if_using_parentheses_when_calling_sub(&mut self, ident: &FullIdent) {
+    fn fail_if_using_parentheses_when_calling_sub(&mut self, ident: &FullIdent) -> Result<(), ParseError> {
         let inner = &ident.0;
         if let Expr::FnApplication { args, .. } = &**inner {
             if args.len() > 1 {
-                let full = self.peek_full();
-                panic!(
-                    "{}:{} compilation error: Cannot use parentheses when calling a Sub",
-                    full.line, full.column
-                );
+                let full = self.peek_full()?;
+                return Err(ParseError::new(
+                    "compilation error: Cannot use parentheses when calling a Sub",
+                    full.line,
+                    full.column,
+                ));
             }
-        }
+        };
+        Ok(())
     }
 
-    fn statement_call(&mut self) -> Stmt {
-        self.consume(T![call]);
-        let ident = self.ident_deep();
+    fn statement_call(&mut self) -> Result<Stmt, ParseError> {
+        self.consume(T![call])?;
+        let ident = self.ident_deep()?;
         // TODO if there are no args the parens should be omitted
         //   to validate on windows
-        Stmt::Call(ident)
+        Ok(Stmt::Call(ident))
     }
 
-    fn sub_arguments(&mut self, mut first_expression_part: Option<Expr>) -> Vec<Option<Expr>> {
+    fn sub_arguments(&mut self, mut first_expression_part: Option<Expr>) -> Result<Vec<Option<Expr>>, ParseError> {
         let mut args = Vec::new();
         // TODO first_expression_part might be ignored here!
         // TODO we should be smarter here instead of having all these end conditions
@@ -788,345 +829,361 @@ where
             // Empty arguments are allowed, however working with them is tricky.
             // For now I only found `TypeName(arg) = "Error"` to detect a missing argument.
             if self.at(T![,]) && first_expression_part.is_none() {
-                self.consume(T![,]);
+                self.consume(T![,])?;
                 args.push(None);
                 continue;
             }
-            let arg = self.expression_with_prefix(first_expression_part);
+            let arg = self.expression_with_prefix(first_expression_part)?;
             // consume it only once
             first_expression_part = None;
             args.push(Some(arg));
             if self.at(T![,]) {
-                self.consume(T![,]);
+                self.consume(T![,])?;
             } else {
                 break;
             }
         }
-        args
+        Ok(args)
     }
 
-    fn statement_dim(&mut self) -> Stmt {
-        self.consume(T![dim]);
+    fn statement_dim(&mut self) -> Result<Stmt, ParseError> {
+        self.consume(T![dim])?;
         let mut vars = Vec::new();
         while !self.at(T![nl]) && !self.at(T![EOF]) {
-            let name = self.identifier("variable name");
-            let bounds = self.parenthesized_arguments();
+            let name = self.identifier("variable name")?;
+            let bounds = self.parenthesized_arguments()?;
             vars.push((name, bounds));
             if self.at(T![,]) {
-                self.consume(T![,]);
+                self.consume(T![,])?;
             } else {
                 break;
             }
         }
-        Stmt::Dim { vars }
+        Ok(Stmt::Dim { vars })
     }
 
-    fn statement_redim(&mut self) -> Stmt {
-        self.consume(T![redim]);
+    fn statement_redim(&mut self) -> Result<Stmt, ParseError> {
+        self.consume(T![redim])?;
         let mut preserve = false;
         if self.at(T![preserve]) {
-            self.consume(T![preserve]);
+            self.consume(T![preserve])?;
             preserve = true;
         }
         let mut var_bounds = Vec::new();
-        let first_var = self.consume(T![ident]);
+        let first_var = self.consume(T![ident])?;
         let var_name = self.text(&first_var).to_string();
-        let bounds = self.parenthesized_arguments();
+        let bounds = self.parenthesized_arguments()?;
         var_bounds.push((var_name, bounds));
         while self.at(T![,]) {
-            self.consume(T![,]);
-            let ident = self.consume(T![ident]);
+            self.consume(T![,])?;
+            let ident = self.consume(T![ident])?;
             let name = self.text(&ident).to_string();
-            let bounds = self.parenthesized_arguments();
+            let bounds = self.parenthesized_arguments()?;
             var_bounds.push((name, bounds));
         }
 
-        Stmt::ReDim {
+        Ok(Stmt::ReDim {
             preserve,
             var_bounds,
-        }
+        })
     }
 
-    fn statement_const(&mut self) -> Stmt {
-        self.consume(T![const]);
+    fn statement_const(&mut self) -> Result<Stmt, ParseError> {
+        self.consume(T![const])?;
 
         // multiple constants can be defined in one line
         let mut constants = Vec::new();
         while !self.at(T![nl]) && !self.at(T![EOF]) {
-            let ident = self.consume(T![ident]);
+            let ident = self.consume(T![ident])?;
             let name = self.text(&ident).to_string();
-            self.consume(T![=]);
-            let literal = self.parse_const_literal();
+            self.consume(T![=])?;
+            let literal = self.parse_const_literal()?;
             constants.push((name, literal));
             if self.at(T![,]) {
-                self.consume(T![,]);
+                self.consume(T![,])?;
             } else {
                 break;
             }
         }
-        Stmt::Const(constants)
+        Ok(Stmt::Const(constants))
     }
 
-    fn statement_with(&mut self) -> Stmt {
-        self.consume(T![with]);
-        let object = self.ident_deep();
-        self.consume_line_delimiter();
-        let body = self.block(true, &[T![end]]);
-        self.consume(T![end]);
-        self.consume(T![with]);
-        Stmt::With { object, body }
+    fn statement_with(&mut self) -> Result<Stmt, ParseError> {
+        self.consume(T![with])?;
+        let object = self.ident_deep()?;
+        self.consume_line_delimiter()?;
+        let body = self.block(true, &[T![end]])?;
+        self.consume(T![end])?;
+        self.consume(T![with])?;
+        Ok(Stmt::With { object, body })
     }
 
-    fn statement_exit(&mut self) -> Stmt {
-        self.consume(T![exit]);
-        match self.peek() {
+    fn statement_exit(&mut self) -> Result<Stmt, ParseError> {
+        self.consume(T![exit])?;
+        let res = match self.peek() {
             T![do] => {
-                self.consume(T![do]);
+                self.consume(T![do])?;
                 Stmt::ExitDo
             }
             T![for] => {
-                self.consume(T![for]);
+                self.consume(T![for])?;
                 Stmt::ExitFor
             }
             T![function] => {
-                self.consume(T![function]);
+                self.consume(T![function])?;
                 Stmt::ExitFunction
             }
             T![property] => {
-                self.consume(T![property]);
+                self.consume(T![property])?;
                 Stmt::ExitProperty
             }
             T![sub] => {
-                self.consume(T![sub]);
+                self.consume(T![sub])?;
                 Stmt::ExitSub
             }
-            other => panic!("Exit not supported for {}", other),
-        }
+            other =>
+                return Err(ParseError::new(
+                    format!("Exit not supported for `{}`", other),
+                    0,
+                    0,
+                ))
+        };
+        Ok(res)
     }
 
-    fn statement_on(&mut self) -> Stmt {
+    fn statement_on(&mut self) -> Result<Stmt, ParseError> {
         // error handling
-        self.consume(T![on]);
-        self.consume(T![error]);
+        self.consume(T![on])?;
+        self.consume(T![error])?;
         let error_clause = if self.at(T![resume]) {
-            self.consume(T![resume]);
-            self.consume(T![next]);
+            self.consume(T![resume])?;
+            self.consume(T![next])?;
             ErrorClause::ResumeNext
         } else if self.at(T![goto]) {
-            self.consume(T![goto]);
-            let token = self.consume(T![integer_literal]);
-            let number: usize = self
+            self.consume(T![goto])?;
+            let token = self.consume(T![integer_literal])?;
+            let number: usize = match self
                 .text(&token)
-                .parse()
-                .expect("Expected integer after `goto`");
+                .parse() {
+                Ok(number) => number,
+                Err(_) => return Err(ParseError::new("Expected integer after `goto`", token.line, token.column)),
+            };
             if number != 0 {
-                panic!("Expected `goto 0` after `on error`")
+                return Err(ParseError::new(
+                    "Expected `goto 0` after `on error`",
+                    token.line,
+                    token.column,
+                ));
             }
             ErrorClause::Goto0
         } else {
             panic!("Expected `resume next` or `goto 0` after `on error`")
         };
-        Stmt::OnError { error_clause }
+        Ok(Stmt::OnError { error_clause })
     }
 
-    fn statement_select(&mut self) -> Stmt {
-        self.consume(T![select]);
-        self.consume(T![case]);
-        let expr = self.expression();
-        self.consume_line_delimiter();
+    fn statement_select(&mut self) -> Result<Stmt, ParseError> {
+        self.consume(T![select])?;
+        self.consume(T![case])?;
+        let expr = self.expression()?;
+        self.consume_line_delimiter()?;
         let mut cases: Vec<Case> = Vec::new();
         let mut else_stmt = None;
         while !self.at(T![end]) {
             if else_stmt.is_some() {
-                panic!("`else` statement must be last in `select case` block")
+                return Err(ParseError::new(
+                    "`else` statement must be last in `select case` block",
+                    0,
+                    0,
+                ));
             }
-            self.consume(T![case]);
+            self.consume(T![case])?;
             if self.at(T![else]) {
-                self.consume(T![else]);
-                self.consume_optional_line_delimiter();
-                let block = self.block(true, &[T![end], T![case]]);
+                self.consume(T![else])?;
+                self.consume_optional_line_delimiter()?;
+                let block = self.block(true, &[T![end], T![case]])?;
                 else_stmt = Some(block);
             } else {
                 let mut tests = Vec::new();
                 // comma separated list of expressions
-                let first_expr = self.expression();
+                let first_expr = self.expression()?;
                 tests.push(first_expr);
                 while self.at(T![,]) {
-                    self.consume(T![,]);
-                    let expr = self.expression();
+                    self.consume(T![,])?;
+                    let expr = self.expression()?;
                     tests.push(expr);
                 }
-                self.consume_optional_line_delimiter();
-                let body = self.block(true, &[T![end], T![case]]);
+                self.consume_optional_line_delimiter()?;
+                let body = self.block(true, &[T![end], T![case]])?;
                 cases.push(Case { tests, body });
             }
         }
-        self.consume(T![end]);
-        self.consume(T![select]);
-        Stmt::SelectCase {
+        self.consume(T![end])?;
+        self.consume(T![select])?;
+        Ok(Stmt::SelectCase {
             test_expr: Box::new(expr),
             cases,
             else_stmt,
-        }
+        })
     }
 
-    fn statement_for(&mut self) -> Stmt {
-        self.consume(T![for]);
+    fn statement_for(&mut self) -> Result<Stmt, ParseError> {
+        self.consume(T![for])?;
 
         if self.at(T![each]) {
-            self.consume(T![each]);
+            self.consume(T![each])?;
             let element = self.next().unwrap();
             let element_name = self.text(&element).to_string();
-            self.consume(T![in]);
-            let group = Box::new(self.expression());
-            self.consume_line_delimiter();
+            self.consume(T![in])?;
+            let group = Box::new(self.expression()?);
+            self.consume_line_delimiter()?;
 
-            let body = self.block(true, &[T![next]]);
+            let body = self.block(true, &[T![next]])?;
 
-            self.consume(T![next]);
+            self.consume(T![next])?;
 
-            Stmt::ForEachStmt {
+            Ok(Stmt::ForEachStmt {
                 element: element_name,
                 group,
                 body,
-            }
+            })
         } else {
             let counter = self.next().unwrap();
             let counter_name = self.text(&counter).to_string();
-            self.consume(T![=]);
-            let start = self.expression();
-            self.consume(T![to]);
-            let end = self.expression();
+            self.consume(T![=])?;
+            let start = self.expression()?;
+            self.consume(T![to])?;
+            let end = self.expression()?;
             let step = if self.at(T![step]) {
-                self.consume(T![step]);
-                Some(Box::new(self.expression()))
+                self.consume(T![step])?;
+                Some(Box::new(self.expression()?))
             } else {
                 None
             };
-            self.consume_line_delimiter();
+            self.consume_line_delimiter()?;
 
-            let body = self.block(true, &[T![next]]);
+            let body = self.block(true, &[T![next]])?;
 
-            self.consume(T![next]);
+            self.consume(T![next])?;
 
-            Stmt::ForStmt {
+            Ok(Stmt::ForStmt {
                 counter: counter_name,
                 start: Box::new(start),
                 end: Box::new(end),
                 step,
                 body,
-            }
+            })
         }
     }
 
-    fn statement_do(&mut self) -> Stmt {
-        self.consume(T![do]);
+    fn statement_do(&mut self) -> Result<Stmt, ParseError> {
+        self.consume(T![do])?;
         let mut check = DoLoopCheck::None;
 
         if self.at(T![while]) {
-            self.consume(T![while]);
-            check = DoLoopCheck::Pre(DoLoopCondition::While(Box::new(self.expression())))
+            self.consume(T![while])?;
+            check = DoLoopCheck::Pre(DoLoopCondition::While(Box::new(self.expression()?)))
         } else if self.at(T![until]) {
-            self.consume(T![until]);
-            check = DoLoopCheck::Pre(DoLoopCondition::Until(Box::new(self.expression())))
+            self.consume(T![until])?;
+            check = DoLoopCheck::Pre(DoLoopCondition::Until(Box::new(self.expression()?)))
         }
 
-        let body = self.block(true, &[T![loop]]);
-        self.consume(T![loop]);
+        let body = self.block(true, &[T![loop]])?;
+        self.consume(T![loop])?;
 
         if self.at(T![while]) {
-            self.consume(T![while]);
-            check = DoLoopCheck::Post(DoLoopCondition::While(Box::new(self.expression())))
+            self.consume(T![while])?;
+            check = DoLoopCheck::Post(DoLoopCondition::While(Box::new(self.expression()?)))
         } else if self.at(T![until]) {
-            self.consume(T![until]);
-            check = DoLoopCheck::Post(DoLoopCondition::Until(Box::new(self.expression())))
+            self.consume(T![until])?;
+            check = DoLoopCheck::Post(DoLoopCondition::Until(Box::new(self.expression()?)))
         }
 
-        Stmt::DoLoop { check, body }
+        Ok(Stmt::DoLoop { check, body })
     }
 
-    fn statement_while(&mut self) -> Stmt {
-        self.consume(T![while]);
-        let condition = self.expression();
-        self.consume_line_delimiter();
+    fn statement_while(&mut self) -> Result<Stmt, ParseError> {
+        self.consume(T![while])?;
+        let condition = self.expression()?;
+        self.consume_line_delimiter()?;
 
-        let body = self.block(true, &[T![wend]]);
+        let body = self.block(true, &[T![wend]])?;
 
-        self.consume(T![wend]);
+        self.consume(T![wend])?;
 
-        Stmt::WhileStmt {
+        Ok(Stmt::WhileStmt {
             condition: Box::new(condition),
             body,
-        }
+        })
     }
 
-    fn statement_set(&mut self) -> Stmt {
-        self.consume(T![set]);
-        let var = self.ident_deep();
-        self.consume(T![=]);
+    fn statement_set(&mut self) -> Result<Stmt, ParseError> {
+        self.consume(T![set])?;
+        let var = self.ident_deep()?;
+        self.consume(T![=])?;
         let rhs = match self.peek() {
             T![nothing] => {
-                self.consume(T![nothing]);
+                self.consume(T![nothing])?;
                 SetRhs::Nothing
             }
             _ => {
-                let expr = self.expression();
+                let expr = self.expression()?;
                 SetRhs::Expr(Box::new(expr))
             }
         };
-        Stmt::Set { var, rhs }
+        Ok(Stmt::Set { var, rhs })
     }
 
-    fn statement_if(&mut self) -> Stmt {
-        self.consume(T![if]);
+    fn statement_if(&mut self) -> Result<Stmt, ParseError> {
+        self.consume(T![if])?;
 
-        let condition = self.expression();
+        let condition = self.expression()?;
 
-        self.consume(T![then]);
+        self.consume(T![then])?;
 
         // if we have a newline, it's a block if statement
         if self.at(T![nl]) {
-            self.consume(T![nl]);
-            let body = self.block(true, &[T![end], T![else], T![elseif]]);
+            self.consume(T![nl])?;
+            let body = self.block(true, &[T![end], T![else], T![elseif]])?;
             let mut elseif_statements = Vec::new();
             while self.at(T![elseif]) {
-                self.consume(T![elseif]);
-                let condition = self.expression();
-                self.consume(T![then]);
-                self.consume_optional_line_delimiter();
-                let block = self.block(true, &[T![end], T![else], T![elseif]]);
+                self.consume(T![elseif])?;
+                let condition = self.expression()?;
+                self.consume(T![then])?;
+                self.consume_optional_line_delimiter()?;
+                let block = self.block(true, &[T![end], T![else], T![elseif]])?;
                 elseif_statements.push((Box::new(condition), block));
             }
             let else_stmt = if self.at(T![else]) {
-                self.consume(T![else]);
-                self.consume_optional_line_delimiter();
-                Some(self.block(true, &[T![end]]))
+                self.consume(T![else])?;
+                self.consume_optional_line_delimiter()?;
+                Some(self.block(true, &[T![end]])?)
             } else {
                 None
             };
-            self.consume(T![end]);
-            self.consume(T![if]);
-            Stmt::IfStmt {
+            self.consume(T![end])?;
+            self.consume(T![if])?;
+            Ok(Stmt::IfStmt {
                 condition: Box::new(condition),
                 body,
                 elseif_statements,
                 else_stmt,
-            }
+            })
         } else {
             // single line if statement
             // can contain multiple statements if separated by colons
-            let body = self.block(false, &[T![else], T![elseif], T![end], T![EOF]]);
+            let body = self.block(false, &[T![else], T![elseif], T![end], T![EOF]])?;
             let mut elseif_statements = Vec::new();
             while self.at(T![elseif]) {
-                self.consume(T![elseif]);
-                let condition = self.expression();
-                self.consume(T![then]);
-                let elseif_body = self.block(false, &[T![else], T![elseif], T![end], T![EOF]]);
+                self.consume(T![elseif])?;
+                let condition = self.expression()?;
+                self.consume(T![then])?;
+                let elseif_body = self.block(false, &[T![else], T![elseif], T![end], T![EOF]])?;
                 elseif_statements.push((Box::new(condition), elseif_body));
             }
             let else_stmt = if self.at(T![else]) {
-                self.consume(T![else]);
-                let else_body = self.block(false, &[T![end], T![EOF]]);
+                self.consume(T![else])?;
+                let else_body = self.block(false, &[T![end], T![EOF]])?;
                 Some(else_body)
             } else {
                 None
@@ -1134,73 +1191,68 @@ where
 
             // optional "End If" if we still have not encountered a newline
             if self.at(T![end]) {
-                self.consume(T![end]);
-                self.consume(T![if]);
+                self.consume(T![end])?;
+                self.consume(T![if])?;
             }
 
-            Stmt::IfStmt {
+            Ok(Stmt::IfStmt {
                 condition: Box::new(condition),
                 body,
                 elseif_statements,
                 else_stmt,
-            }
+            })
         }
     }
 
-    fn optional_parenthesized_property_arguments(&mut self) -> Vec<(String, ArgumentType)> {
+    fn optional_parenthesized_property_arguments(&mut self) -> Result<Vec<(String, ArgumentType)>, ParseError>{
         let mut property_arguments = Vec::new();
         if self.at(T!['(']) {
-            self.consume(T!['(']);
+            self.consume(T!['('])?;
             while !self.at(T![')']) {
                 // modifiers for the property
                 let argument_type = if self.at(T![byval]) {
-                    self.consume(T![byval]);
+                    self.consume(T![byval])?;
                     ArgumentType::ByVal
                 } else if self.at(T![byref]) {
-                    self.consume(T![byref]);
+                    self.consume(T![byref])?;
                     ArgumentType::ByRef
                 } else {
                     ArgumentType::ByVal
                 };
-                let ident = self.consume(T![ident]);
+                let ident = self.consume(T![ident])?;
                 let arg_name = self.text(&ident).to_string();
                 property_arguments.push((arg_name, argument_type));
                 if self.at(T![,]) {
-                    self.consume(T![,]);
+                    self.consume(T![,])?;
                 }
             }
-            self.consume(T![')']);
+            self.consume(T![')'])?;
         }
-        property_arguments
+        Ok(property_arguments)
     }
 
-    fn ident_deep(&mut self) -> FullIdent {
-        let expr = self.ident_deep2();
-        FullIdent(Box::new(expr))
-    }
-
-    fn ident_deep2(&mut self) -> Expr {
-        let mut lhs = self.ident_deep_lhs();
+    fn ident_deep(&mut self) -> Result<FullIdent, ParseError> {
+        let mut expr = self.ident_deep_lhs()?;
         loop {
             match self.peek() {
                 // highest binding power
                 // _. is the same as . but disallows whitespace between the dot and the base.
                 // The property itself is allowed to be prefixed with whitespace.
                 T![_.] => {
-                    self.consume(T![_.]);
-                    let property = self.member_identifier();
-                    lhs = Expr::MemberExpression {
-                        base: Box::new(lhs),
+                    self.consume(T![_.])?;
+                    let property = self.member_identifier()?;
+                    expr = Expr::MemberExpression {
+                        base: Box::new(expr),
                         property,
                     };
                     continue;
                 }
                 T!['('] => {
                     //self.consume(T!['(']);
-                    let args = self.parenthesized_optional_arguments();
+                    let args = self.parenthesized_optional_arguments()?;
                     //self.consume(T![')']);
-                    lhs = Expr::FnApplication {
-                        callee: Box::new(lhs),
+                    expr = Expr::FnApplication {
+                        callee: Box::new(expr),
                         args,
                     };
                     continue;
@@ -1210,15 +1262,15 @@ where
                 }
             }
         }
-        lhs
+        Ok(FullIdent(Box::new(expr)))
     }
 
-    fn ident_deep_lhs(&mut self) -> Expr {
+    fn ident_deep_lhs(&mut self) -> Result<Expr, ParseError> {
         if let Some(literal) = self.parse_literal() {
-            return Expr::Literal(literal);
+            return Ok(Expr::Literal(literal));
         }
 
-        match self.peek() {
+        let res = match self.peek() {
             // TODO deduplicate this list with identifier()
             //   we have seen these tokens being used as identifiers
             T![ident]
@@ -1232,12 +1284,12 @@ where
             | T![set] => {
                 //let full_ident = self.ident_deep();
                 //Expr::IdentFnSubCall(full_ident)
-                let ident = self.identifier("identifier base");
+                let ident = self.identifier("identifier base")?;
                 Expr::ident(ident)
             }
             T![.] => {
                 self.consume(T![.]);
-                let property = self.identifier("property");
+                let property = self.identifier("property")?;
                 Expr::MemberExpression {
                     base: Box::new(WithScoped),
                     property,
@@ -1245,26 +1297,28 @@ where
             }
             T![new] => {
                 self.consume(T![new]);
-                let ident = self.consume(T![ident]);
+                let ident = self.consume(T![ident])?;
                 let class_name = self.text(&ident);
                 Expr::ident(class_name)
             }
             T!['('] => {
                 // There is no AST node for grouped expressions.
                 // Parentheses just influence the tree structure.
-                self.consume(T!['(']);
-                let expr = self.parse_expression(0);
-                self.consume(T![')']);
+                self.consume(T!['('])?;
+                let expr = self.parse_expression(0)?;
+                self.consume(T![')'])?;
                 expr
             }
             kind => {
-                let token = self.peek_full();
-                panic!(
-                    "{}:{} Unknown start of identifier: {kind}",
-                    token.line, token.column
-                )
+                let token = self.peek_full()?;
+                return Err(ParseError::new(
+                    format!("Unknown start of identifier: {kind}", kind = kind),
+                    token.line,
+                    token.column,
+                ));
             }
-        }
+        };
+        Ok(res)
     }
 
     // /// Parse a deep identifier, which can contain multiple array and property accesses.
@@ -1338,11 +1392,15 @@ mod test {
     use super::*;
     use pretty_assertions::assert_eq;
 
+    fn parse_ident_deep(input: &str) -> FullIdent {
+        let mut parser = Parser::new(input);
+        parser.ident_deep().unwrap()
+    }
+
     #[test]
     fn test_parse_ident_deep_mixed() {
         let input = "base.prop.prop2(1).     prop3(2,3).   _\nprop4(1)(3).prop5";
-        let mut parser = Parser::new(input);
-        let ident = parser.ident_deep();
+        let ident = parse_ident_deep(input);
         #[rustfmt::skip]
         assert_eq!(
             ident,
@@ -1381,8 +1439,7 @@ mod test {
     #[test]
     fn test_parse_ident_deep_absolute() {
         let input = "obj.prop";
-        let mut parser = Parser::new(input);
-        let ident = parser.ident_deep();
+        let ident = parse_ident_deep(input);
         #[rustfmt::skip]
         assert_eq!(
             ident,
@@ -1398,8 +1455,7 @@ mod test {
     #[test]
     fn test_parse_ident_deep_relative() {
         let input = ".prop.prop2";
-        let mut parser = Parser::new(input);
-        let ident = parser.ident_deep();
+        let ident = parse_ident_deep(input);
         #[rustfmt::skip]
         assert_eq!(
             ident,
@@ -1419,8 +1475,7 @@ mod test {
     fn test_parse_ident_deep_with_keyword_property() {
         // property is a keyword in VBScript
         let input = ".property.property.other";
-        let mut parser = Parser::new(input);
-        let ident = parser.ident_deep();
+        let ident = parse_ident_deep(input);
         #[rustfmt::skip]
         assert_eq!(
             ident,
@@ -1442,7 +1497,6 @@ mod test {
     #[should_panic(expected = "0:0 Expected identifier as member identifier, but found `<EOF>`")]
     fn test_parse_ident_deep_fail_with_trailing_dot() {
         let input = "a.b.";
-        let mut parser = Parser::new(input);
-        parser.ident_deep();
+        parse_ident_deep(input);
     }
 }
