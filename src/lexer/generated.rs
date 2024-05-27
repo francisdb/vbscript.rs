@@ -481,7 +481,7 @@ impl LogosToken {
             KwPublic(_)  => T![public],
             KwRaiseEvent(_) => unimplemented!( "KwRaiseEvent"),
             KwReDim(_)      => T![redim],
-            KwRem(_)        => T![rem],
+            KwRem(_)        => unreachable!("Should never be reached as it is handled in the lexer!"),
             KwResume(_)     => T![resume],
             KwRSet(_)       => unimplemented!( "KwRSet"),
             KwSelect(_)  => T![select],

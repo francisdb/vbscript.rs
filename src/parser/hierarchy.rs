@@ -566,8 +566,7 @@ where
             | T![property]
             | T![me]
             | T![stop]
-            | T![step]
-            | T![rem] => self.text(&ident).to_string(),
+            | T![step] => self.text(&ident).to_string(),
             _ => {
                 panic!(
                     "{}:{} Expected identifier as {}, but found `{}`",
