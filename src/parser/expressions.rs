@@ -2,22 +2,25 @@
 
 use crate::lexer::{Token, TokenKind};
 use crate::parser::ast::{Expr, Lit};
-use crate::parser::Parser;
+use crate::parser::{ParseError, Parser};
 use crate::T;
 
 impl<'input, I> Parser<'input, I>
 where
     I: Iterator<Item = Token>,
 {
-    pub fn expression_with_prefix(&mut self, first_expression_part: Option<Expr>) -> Expr {
+    pub fn expression_with_prefix(
+        &mut self,
+        first_expression_part: Option<Expr>,
+    ) -> Result<Expr, ParseError> {
         self.parse_expression_with_prefix(0, first_expression_part)
     }
 
-    pub fn expression(&mut self) -> Expr {
+    pub fn expression(&mut self) -> Result<Expr, ParseError> {
         self.parse_expression(0)
     }
 
-    pub fn parse_expression(&mut self, binding_power: u8) -> Expr {
+    pub fn parse_expression(&mut self, binding_power: u8) -> Result<Expr, ParseError> {
         self.parse_expression_with_prefix(binding_power, None)
     }
 
@@ -25,8 +28,11 @@ where
         &mut self,
         binding_power: u8,
         first_expression_part: Option<Expr>,
-    ) -> Expr {
-        let mut lhs = first_expression_part.unwrap_or_else(|| self.parse_expression_lhs());
+    ) -> Result<Expr, ParseError> {
+        let mut lhs = match first_expression_part {
+            Some(expr) => expr,
+            None => self.parse_expression_lhs()?,
+        };
         loop {
             let op = match self.peek() {
                 op @ T![+]
@@ -72,7 +78,7 @@ where
 
             // highest binding power
             if op == T!['('] {
-                let args = self.parenthesized_optional_arguments();
+                let args = self.parenthesized_optional_arguments()?;
                 lhs = Expr::FnApplication {
                     callee: Box::new(lhs),
                     args,
@@ -84,8 +90,8 @@ where
             // _. is the same as . but disallows whitespace between the dot and the base.
             // The property itself is allowed to be prefixed with whitespace.
             if op == T![_.] {
-                self.consume(T![_.]);
-                let property = self.member_identifier();
+                self.consume(T![_.])?;
+                let property = self.member_identifier()?;
                 lhs = Expr::MemberExpression {
                     base: Box::new(lhs),
                     property,
@@ -100,8 +106,8 @@ where
                     break;
                 }
 
-                self.consume(op);
-                let rhs = self.parse_expression(right_binding_power);
+                self.consume(op)?;
+                let rhs = self.parse_expression(right_binding_power)?;
                 lhs = Expr::InfixOp {
                     op,
                     lhs: Box::new(lhs),
@@ -111,45 +117,48 @@ where
                 continue;
             } else {
                 // break; // Not an operator --> end of expression
-                let token = *self.peek_full();
+                let token = *self.peek_full()?;
                 let span = self.text(&token);
-                panic!(
-                    "No binding power for operator `{op}` in expression at line {}, column {}: {span}",
-                    token.line, token.column
-                )
+                return Err(ParseError::new(
+                    format!("No binding power for operator `{op}` in expression: {span}"),
+                    token.line,
+                    token.column,
+                ));
             }
         }
 
-        lhs
+        Ok(lhs)
     }
 
     // expressions for constants are very limited, no math
-    pub fn parse_const_literal(&mut self) -> Lit {
+    pub fn parse_const_literal(&mut self) -> Result<Lit, ParseError> {
         let lit = match self.peek() {
             sign @ T![+] | sign @ T![-] => {
-                self.consume(sign);
+                self.consume(sign)?;
                 self.parse_literal().map(|lit| match lit {
-                    Lit::Int(i) => Lit::Int(-i),
-                    Lit::Float(f) => Lit::Float(-f),
+                    Lit::Int(i) => Ok(Lit::Int(-i)),
+                    Lit::Float(f) => Ok(Lit::Float(-f)),
                     _ => {
-                        let peek = self.peek_full();
-                        panic!(
-                            "Expected literal for constant at line {}, column {}",
-                            peek.line, peek.column
-                        )
+                        let peek = self.peek_full()?;
+                        Err(ParseError::new(
+                            "Expected integer or float literal for unary minus",
+                            peek.line,
+                            peek.column,
+                        ))
                     }
                 })
             }
-            _ => self.parse_literal(),
+            _ => self.parse_literal().map(Ok),
         };
         match lit {
-            Some(lit) => lit,
+            Some(lit) => Ok(lit?),
             None => {
-                let token = self.peek_full();
-                panic!(
-                    "Expected literal for constant at line {}, column {}",
-                    token.line, token.column
-                )
+                let token = self.peek_full()?;
+                Err(ParseError::new(
+                    "Expected literal for constant",
+                    token.line,
+                    token.column,
+                ))
             }
         }
     }
@@ -227,19 +236,19 @@ where
         }
     }
 
-    fn parse_expression_lhs(&mut self) -> Expr {
+    fn parse_expression_lhs(&mut self) -> Result<Expr, ParseError> {
         if let Some(literal) = self.parse_literal() {
-            return Expr::Literal(literal);
+            return Ok(Expr::Literal(literal));
         }
 
-        if let Some(ident) = self.identifier_opt() {
-            return Expr::ident(ident);
+        if let Some(ident) = self.identifier_opt()? {
+            return Ok(Expr::ident(ident));
         }
 
-        match self.peek() {
+        let res = match self.peek() {
             T![.] => {
-                self.consume(T![.]);
-                let ident = self.consume(T![ident]);
+                self.consume(T![.])?;
+                let ident = self.consume(T![ident])?;
                 let property = self.text(&ident).to_string();
                 Expr::MemberExpression {
                     base: Box::new(Expr::WithScoped),
@@ -247,74 +256,78 @@ where
                 }
             }
             T![new] => {
-                self.consume(T![new]);
-                let ident = self.consume(T![ident]);
+                self.consume(T![new])?;
+                let ident = self.consume(T![ident])?;
                 let class_name = self.text(&ident);
                 Expr::new(class_name)
             }
             T!['('] => {
                 // There is no AST node for grouped expressions.
                 // Parentheses just influence the tree structure.
-                self.consume(T!['(']);
-                let expr = self.parse_expression(0);
-                self.consume(T![')']);
+                self.consume(T!['('])?;
+                let expr = self.parse_expression(0)?;
+                self.consume(T![')'])?;
                 expr
             }
             op @ T![+] | op @ T![-] | op @ T![not] => {
-                self.consume(op);
+                self.consume(op)?;
                 let ((), right_binding_power) = op.prefix_binding_power();
                 // NEW!
-                let expr = self.parse_expression(right_binding_power);
+                let expr = self.parse_expression(right_binding_power)?;
                 Expr::PrefixOp {
                     op,
                     expr: Box::new(expr),
                 }
             }
             kind => {
-                let token = self.peek_full();
-                panic!(
-                    "{}:{} Unknown start of expression: {kind}",
-                    token.line, token.column
-                )
+                let token = self.peek_full()?;
+                return Err(ParseError::new(
+                    format!("Unknown start of expression: {kind}"),
+                    token.line,
+                    token.column,
+                ));
             }
-        }
+        };
+        Ok(res)
     }
 
-    pub(crate) fn parenthesized_arguments(&mut self) -> Vec<Expr> {
+    pub(crate) fn parenthesized_arguments(&mut self) -> Result<Vec<Expr>, ParseError> {
         let mut arguments = Vec::new();
         if self.at(T!['(']) {
-            self.consume(T!['(']);
+            self.consume(T!['('])?;
             while !self.at(T![')']) {
-                let expr = self.expression();
+                let expr = self.expression()?;
                 arguments.push(expr);
                 if self.at(T![,]) {
-                    self.consume(T![,]);
+                    self.consume(T![,])?;
                 }
             }
-            self.consume(T![')']);
+            self.consume(T![')'])?;
         };
-        arguments
+        Ok(arguments)
     }
 
-    pub(crate) fn parenthesized_optional_arguments(&mut self) -> Vec<Option<Expr>> {
+    pub(crate) fn parenthesized_optional_arguments(
+        &mut self,
+    ) -> Result<Vec<Option<Expr>>, ParseError> {
         let mut arguments = Vec::new();
         if self.at(T!['(']) {
-            self.consume(T!['(']);
+            self.consume(T!['('])?;
             while !self.at(T![')']) {
                 // empty args are allowed
                 let expr = if self.at(T![,]) {
                     None
                 } else {
-                    Some(self.expression())
+                    Some(self.expression()?)
                 };
                 arguments.push(expr);
                 if self.at(T![,]) {
-                    self.consume(T![,]);
+                    self.consume(T![,])?;
                 }
             }
-            self.consume(T![')']);
+            self.consume(T![')'])?;
         };
-        arguments
+        Ok(arguments)
     }
 }
 
@@ -371,11 +384,15 @@ mod test {
     use crate::parser::ast::Expr::{Literal, MemberExpression};
     use pretty_assertions::assert_eq;
 
+    fn parse_expression(input: &str) -> Expr {
+        let mut parser = Parser::new(input);
+        parser.expression().unwrap()
+    }
+
     #[test]
     fn test_expression_operator_priority() {
         let input = "1 + 2 * 3";
-        let mut parser = Parser::new(input);
-        let expr = parser.expression();
+        let expr = parse_expression(input);
         assert_eq!(
             expr,
             Expr::InfixOp {
@@ -393,8 +410,7 @@ mod test {
     #[test]
     fn test_expression_with_parentheses() {
         let input = "(1 + 2) * 3";
-        let mut parser = Parser::new(input);
-        let expr = parser.expression();
+        let expr = parse_expression(input);
         assert_eq!(
             expr,
             Expr::InfixOp {
@@ -412,8 +428,7 @@ mod test {
     #[test]
     fn test_expression_with_hex_leteral() {
         let input = "col And &HFF";
-        let mut parser = Parser::new(input);
-        let expr = parser.expression();
+        let expr = parse_expression(input);
         assert_eq!(
             expr,
             Expr::InfixOp {
@@ -427,8 +442,7 @@ mod test {
     #[test]
     fn test_expression_is_nothing() {
         let input = "varValue Is Nothing";
-        let mut parser = Parser::new(input);
-        let expr = parser.expression();
+        let expr = parse_expression(input);
         assert_eq!(
             expr,
             Expr::InfixOp {
@@ -442,8 +456,7 @@ mod test {
     #[test]
     fn test_expression_not_ident_is_nothing() {
         let input = "Not varValue Is Nothing";
-        let mut parser = Parser::new(input);
-        let expr = parser.expression();
+        let expr = parse_expression(input);
         assert_eq!(
             expr,
             Expr::PrefixOp {
@@ -460,8 +473,7 @@ mod test {
     #[test]
     fn test_expression_equals() {
         let input = "varValue = varValue2";
-        let mut parser = Parser::new(input);
-        let expr = parser.expression();
+        let expr = parse_expression(input);
         assert_eq!(
             expr,
             Expr::InfixOp {
@@ -475,8 +487,7 @@ mod test {
     #[test]
     fn test_expression_string_concatenation() {
         let input = r#""Hello" & " " & name"#;
-        let mut parser = Parser::new(input);
-        let expr = parser.expression();
+        let expr = parse_expression(input);
         assert_eq!(
             expr,
             Expr::InfixOp {
@@ -494,8 +505,7 @@ mod test {
     #[test]
     fn test_me_property_assignment() {
         let input = "Me.Name = \"John\"";
-        let mut parser = Parser::new(input);
-        let expr = parser.expression();
+        let expr = parse_expression(input);
         assert_eq!(
             expr,
             Expr::InfixOp {
@@ -512,8 +522,7 @@ mod test {
     #[test]
     fn test_multiline_string() {
         let input = "test &_\r\n  \"Hello\"";
-        let mut parser = Parser::new(input);
-        let expr = parser.expression();
+        let expr = parse_expression(input);
         assert_eq!(
             expr,
             Expr::InfixOp {
@@ -528,8 +537,7 @@ mod test {
     fn test_default_function_call() {
         // call the default function of a class with argument 1
         let input = "(new Foo)(1)";
-        let mut parser = Parser::new(input);
-        let expr = parser.expression();
+        let expr = parse_expression(input);
         assert_eq!(
             expr,
             Expr::fn_application(Expr::new("Foo"), vec![Expr::int(1)])
@@ -540,13 +548,12 @@ mod test {
     fn test_parenthesized_property_access_check() {
         // eg `if (wheelchange).enabled=false then`
         let input = "(foo).enabled=false";
-        let mut parser = Parser::new(input);
-        let expr = parser.expression();
+        let expr = parse_expression(input);
         assert_eq!(
             expr,
             Expr::InfixOp {
                 op: T![=],
-                lhs: Box::new(Expr::MemberExpression {
+                lhs: Box::new(MemberExpression {
                     base: Box::new(Expr::ident("foo")),
                     property: "enabled".to_string(),
                 }),

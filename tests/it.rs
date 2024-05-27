@@ -1081,7 +1081,7 @@ fn try_parsing_all_vbs_files() {
         println!("Parsing file: {}", path.display());
         let input = std::fs::read_to_string(&path).unwrap();
         let mut parser = Parser::new(&input);
-        let items = parser.file();
+        let items = parser.file().unwrap();
 
         assert!(!items.is_empty())
     }
