@@ -2,7 +2,6 @@ use crate::lexer::generated::LogosToken;
 use logos::Logos;
 pub use token::{Token, TokenKind};
 
-use crate::lexer::TokenKind::ParseError;
 use crate::T;
 
 mod generated;
@@ -14,6 +13,8 @@ pub type Lexer<'input> = LogosLexer<'input>;
 pub struct LogosLexer<'input> {
     generated: logos::SpannedIter<'input, LogosToken>,
     eof: bool,
+    prev_token_kind: TokenKind,
+    queued_token: Option<Token>,
 }
 
 impl<'input> LogosLexer<'input> {
@@ -21,6 +22,8 @@ impl<'input> LogosLexer<'input> {
         Self {
             generated: LogosToken::lexer(input).spanned(),
             eof: false,
+            prev_token_kind: TokenKind::Newline,
+            queued_token: None,
         }
     }
 
@@ -33,13 +36,114 @@ impl<'input> Iterator for LogosLexer<'input> {
     type Item = Token;
 
     fn next(&mut self) -> Option<Self::Item> {
+        if let Some(token) = self.queued_token.take() {
+            self.queued_token = None;
+            return Some(token);
+        }
         match self.generated.next() {
             Some((token_result, span)) => match token_result {
                 Ok(token) => {
-                    let (line, column) = token.line_column();
-                    //println!("{}: {}:{}", token.kind(), line, column);
+                    //println!("{:?} {:?}", token, span);
+                    let mut current_token = token;
+
+                    // Some tokens are transformed to identifiers when they are following member access
+                    // TODO look at the last non-whitespace character
+                    // TODO add more cases
+                    if matches!(self.prev_token_kind, T![_.]) {
+                        match current_token {
+                            LogosToken::KwTrue(_)
+                            | LogosToken::KwFalse(_)
+                            | LogosToken::KwRem(_) => {
+                                let (line, column) = current_token.line_column();
+                                let rem_ident = Token {
+                                    kind: T![ident],
+                                    span: span.into(),
+                                    line,
+                                    column,
+                                };
+                                self.prev_token_kind = rem_ident.kind;
+                                return Some(rem_ident);
+                            }
+                            _ => {}
+                        }
+                    }
+
+                    // if we find a REM we see it as a comment until the end of the line
+                    if let LogosToken::KwRem(_) = current_token {
+                        let (rem_line, rem_column) = current_token.line_column();
+                        let rem_span = span.clone();
+                        let mut current_span = span.clone();
+                        // this will also consume any error tokens which are expected
+                        while !matches!(current_token, LogosToken::NewLine(_)) {
+                            match self.generated.next() {
+                                Some((token_result, span)) => {
+                                    match token_result {
+                                        Ok(token) => {
+                                            //println!("consuming rem {:?} {:?}", token, span);
+                                            current_token = token;
+                                            current_span = span;
+                                        }
+                                        Err(_) => {
+                                            // we also consume anything that could not be tokenized
+                                            // current_token = token;
+                                            current_span = span;
+                                        }
+                                    }
+                                }
+                                None => {
+                                    // return the comment, the eof will be handled in the next iteration
+                                    let comment_span = rem_span.start..current_span.end;
+                                    return Some(Token {
+                                        kind: T![comment],
+                                        span: comment_span.into(),
+                                        line: rem_line,
+                                        column: rem_column,
+                                    });
+                                }
+                            }
+                        }
+                        // queue the newline token
+                        self.queued_token = Some(Token {
+                            kind: T![nl],
+                            span: (current_span.start..current_span.end).into(),
+                            line: rem_line,
+                            column: rem_column,
+                        });
+                        // return the comment
+                        let comment_span = rem_span.start..current_span.start;
+                        return Some(Token {
+                            kind: T![comment],
+                            span: comment_span.into(),
+                            line: rem_line,
+                            column: rem_column,
+                        });
+                    }
+
+                    let current_kind = current_token.kind();
+                    let (line, column) = current_token.line_column();
+
+                    // translate [non-whitepace, .] to [non-whitepace, _.]
+                    // without lookahead/back on the lexer we can't do this kind of check
+                    // TODO would it not be better to do a positive check here checking for valid cases?
+                    if !matches!(
+                        self.prev_token_kind,
+                        T![nl] | T![ws] | T![:] | T!['('] | T![-] | T![,] | T![&]
+                    ) && matches!(current_kind, T![.])
+                    {
+                        let replacement_token = Token {
+                            kind: T![_.],
+                            span: span.into(),
+                            line,
+                            column,
+                        };
+                        self.prev_token_kind = replacement_token.kind;
+                        return Some(replacement_token);
+                    }
+
+                    self.prev_token_kind = current_kind;
+
                     Some(Token {
-                        kind: token.kind(),
+                        kind: current_kind,
                         span: span.into(),
                         line,
                         column,
@@ -49,7 +153,7 @@ impl<'input> Iterator for LogosLexer<'input> {
                     // TODO can we provide more information here?
                     //   can we get the line and column number?
                     Some(Token {
-                        kind: ParseError,
+                        kind: TokenKind::ParseError,
                         span: span.into(),
                         line: 0,
                         column: 0,
@@ -79,13 +183,30 @@ mod test {
     use indoc::indoc;
     use pretty_assertions::assert_eq;
 
+    fn reconstruct(input: &&str, tokens: Vec<Token>) -> String {
+        tokens.iter().map(|t| &input[t.span]).collect::<String>()
+    }
+
     #[test]
-    fn test_string_literal() {
+    fn parse_error() {
+        let input = "$";
+        let mut lexer = Lexer::new(input);
+        let tokens: Vec<_> = lexer.tokenize();
+        let token_kinds = tokens.iter().map(|t| t.kind).collect::<Vec<_>>();
+        assert_eq!(token_kinds, [T![parse_error], T![EOF],]);
+        let reconstructed = reconstruct(&input, tokens);
+        assert_eq!(reconstructed, input);
+    }
+
+    #[test]
+    fn string_literal() {
         let input = r#""hello world""#;
         let mut lexer = Lexer::new(input);
         let tokens: Vec<_> = lexer.tokenize();
         let token_kinds = tokens.iter().map(|t| t.kind).collect::<Vec<_>>();
         assert_eq!(token_kinds, [T![string_literal], T![EOF],]);
+        let reconstructed = reconstruct(&input, tokens);
+        assert_eq!(reconstructed, input);
     }
 
     #[test]
@@ -100,45 +221,68 @@ mod test {
             token_kinds,
             [T![option], T![ws], T![ident], T![nl], T![EOF],]
         );
+        let reconstructed = reconstruct(&input, tokens);
+        assert_eq!(reconstructed, input);
     }
 
     #[test]
-    fn test_lexer_comment_with_pipe() {
+    fn comment_with_pipe() {
         let input = "' |\n";
         let mut lexer = Lexer::new(input);
-        let tokens: Vec<_> = lexer
-            .tokenize()
-            .into_iter()
-            .filter(|t| t.kind != T![ws])
-            .collect();
+        let tokens: Vec<_> = lexer.tokenize();
         let token_kinds = tokens.iter().map(|t| t.kind).collect::<Vec<_>>();
         assert_eq!(token_kinds, [T![comment], T![nl], T![EOF],]);
+        let reconstructed = reconstruct(&input, tokens);
+        assert_eq!(reconstructed, input);
     }
 
     #[test]
-    fn test_lexer_rem_comment() {
+    fn rem_comment_with_newline() {
         let input = "REM comment here\n";
         let mut lexer = Lexer::new(input);
-        let tokens: Vec<_> = lexer
-            .tokenize()
-            .into_iter()
-            .filter(|t| t.kind != T![ws])
-            .collect();
+        let tokens: Vec<_> = lexer.tokenize();
         let token_kinds = tokens.iter().map(|t| t.kind).collect::<Vec<_>>();
         assert_eq!(token_kinds, [T![comment], T![nl], T![EOF],]);
+        let reconstructed = reconstruct(&input, tokens);
+        assert_eq!(reconstructed, input);
     }
 
     #[test]
-    fn test_lexer_not_rem() {
+    fn rem_comment_without_newline() {
+        let input = "REM comment here";
+        let mut lexer = Lexer::new(input);
+        let tokens: Vec<_> = lexer.tokenize();
+        let token_kinds = tokens.iter().map(|t| t.kind).collect::<Vec<_>>();
+        assert_eq!(token_kinds, [T![comment], T![EOF],]);
+        let reconstructed = reconstruct(&input, tokens);
+        assert_eq!(reconstructed, input);
+    }
+
+    #[test]
+    fn rem_comment_trailing() {
+        let input = "dim x:REM comment here";
+        let mut lexer = Lexer::new(input);
+        let tokens: Vec<_> = lexer.tokenize();
+        let token_kinds = tokens.iter().map(|t| t.kind).collect::<Vec<_>>();
+        assert_eq!(
+            token_kinds,
+            [T![dim], T![ws], T![ident], T![:], T![comment], T![EOF],]
+        );
+        let reconstructed = reconstruct(&input, tokens);
+        assert_eq!(reconstructed, input);
+    }
+
+    #[test]
+    fn ident_not_rem() {
         // this used to lexed as a comment
         let input = "Private Sub RemoveBall(aBall)";
         let mut lexer = Lexer::new(input);
-        let tokens: Vec<_> = lexer
-            .tokenize()
-            .into_iter()
+        let tokens: Vec<_> = lexer.tokenize();
+        let token_kinds = tokens
+            .iter()
             .filter(|t| t.kind != T![ws])
-            .collect();
-        let token_kinds = tokens.iter().map(|t| t.kind).collect::<Vec<_>>();
+            .map(|t| t.kind)
+            .collect::<Vec<_>>();
         assert_eq!(
             token_kinds,
             [
@@ -151,25 +295,29 @@ mod test {
                 T![EOF],
             ]
         );
+        let reconstructed = reconstruct(&input, tokens);
+        assert_eq!(reconstructed, input);
     }
 
     #[test]
-    fn test_lexer_string_with_escaped_quotes() {
+    fn string_with_escaped_quotes() {
         let input = r#"
         str = "hello ""world"""
     "#
         .trim();
         let mut lexer = Lexer::new(input);
-        let tokens: Vec<_> = lexer
-            .tokenize()
-            .into_iter()
+        let tokens: Vec<_> = lexer.tokenize();
+        let token_kinds = tokens
+            .iter()
             .filter(|t| t.kind != T![ws])
-            .collect();
-        let token_kinds = tokens.iter().map(|t| t.kind).collect::<Vec<_>>();
+            .map(|t| t.kind)
+            .collect::<Vec<_>>();
         assert_eq!(
             token_kinds,
             [T![ident], T![=], T![string_literal], T![EOF],]
         );
+        let reconstructed = reconstruct(&input, tokens);
+        assert_eq!(reconstructed, input);
     }
 
     #[test]
@@ -211,10 +359,18 @@ mod test {
 
     #[test]
     fn hex_integer_literal() {
-        let input = "&H10";
+        let input = "&H10 &h80040000&";
         let lexer = Lexer::new(input);
         let tokens: Vec<_> = lexer.map(|t| t.kind).collect();
-        assert_eq!(tokens, vec![T![hex_integer_literal], T![EOF],]);
+        assert_eq!(
+            tokens,
+            vec![
+                T![hex_integer_literal],
+                T![ws],
+                T![hex_integer_literal],
+                T![EOF],
+            ]
+        );
     }
 
     #[test]
@@ -237,29 +393,12 @@ mod test {
     #[test]
     fn double_science_notation() {
         let input = "1.401298E-45";
-        let lexer = Lexer::new(input);
-        let tokens: Vec<_> = lexer.map(|t| t.kind).collect();
-        assert_eq!(tokens, vec![T![real_literal], T![EOF],]);
-    }
-
-    #[test]
-    fn multi_level_property_access() {
-        let input = "obj.prop1.prop2.prop3";
-        let lexer = Lexer::new(input);
-        let tokens: Vec<_> = lexer.map(|t| t.kind).collect();
-        assert_eq!(
-            tokens,
-            vec![
-                T![ident],
-                T![.],
-                T![ident],
-                T![.],
-                T![ident],
-                T![.],
-                T![ident],
-                T![EOF],
-            ]
-        );
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let tokens_kinds: Vec<_> = tokens.iter().map(|t| t.kind).collect();
+        assert_eq!(tokens_kinds, vec![T![real_literal], T![EOF],]);
+        let reconstructed = reconstruct(&input, tokens);
+        assert_eq!(reconstructed, input);
     }
 
     #[test]
@@ -269,10 +408,15 @@ mod test {
         Sub stop_sequencer()
             StopSound("metalrolling")
         End Sub"#};
-        let lexer = Lexer::new(input);
-        let tokens: Vec<_> = lexer.map(|t| t.kind).filter(|t| t != &T![ws]).collect();
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let token_kinds: Vec<_> = tokens
+            .iter()
+            .map(|t| t.kind)
+            .filter(|t| t != &T![ws])
+            .collect();
         assert_eq!(
-            tokens,
+            token_kinds,
             [
                 T![comment],
                 T![nl],
@@ -291,6 +435,8 @@ mod test {
                 T![EOF],
             ]
         );
+        let reconstructed = reconstruct(&input, tokens);
+        assert_eq!(reconstructed, input);
     }
 
     #[test]
@@ -299,10 +445,15 @@ mod test {
         on error resume next
         On Error Goto 0
         "#};
-        let lexer = Lexer::new(input);
-        let tokens: Vec<_> = lexer.map(|t| t.kind).filter(|tk| tk != &T![ws]).collect();
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let token_kinds: Vec<_> = tokens
+            .iter()
+            .map(|t| t.kind)
+            .filter(|tk| tk != &T![ws])
+            .collect();
         assert_eq!(
-            tokens,
+            token_kinds,
             vec![
                 T![on],
                 T![error],
@@ -317,6 +468,8 @@ mod test {
                 T![EOF],
             ]
         );
+        let reconstructed = reconstruct(&input, tokens);
+        assert_eq!(reconstructed, input);
     }
 
     #[test]
@@ -349,6 +502,8 @@ mod test {
                 T![EOF],
             ]
         );
+        let reconstructed = reconstruct(&input, tokens);
+        assert_eq!(reconstructed, input);
     }
 
     #[test]
@@ -358,14 +513,14 @@ mod test {
             Const y = 13 ' An unlucky number
         "};
         let mut lexer = Lexer::new(input);
-        let tokens: Vec<_> = lexer
-            .tokenize()
+        let tokens = lexer.tokenize();
+        let token_kinds: Vec<_> = tokens
             .iter()
             .map(|t| t.kind)
             .filter(|t| t != &T![ws])
             .collect();
         assert_eq!(
-            tokens,
+            token_kinds,
             [
                 T![const],
                 T![ident],
@@ -382,20 +537,22 @@ mod test {
                 T![EOF],
             ]
         );
+        let reconstructed = reconstruct(&input, tokens);
+        assert_eq!(reconstructed, input);
     }
 
     #[test]
     fn test_line_continuations_crlf() {
         let input = "x = txt & _\r\ntxt2";
         let mut lexer = Lexer::new(input);
-        let tokens: Vec<_> = lexer
-            .tokenize()
+        let tokens = lexer.tokenize();
+        let token_kinds: Vec<_> = tokens
             .iter()
             .map(|t| t.kind)
             .filter(|t| t != &T![ws])
             .collect();
         assert_eq!(
-            tokens,
+            token_kinds,
             [
                 T![ident],
                 T![=],
@@ -406,6 +563,8 @@ mod test {
                 T![EOF],
             ]
         );
+        let reconstructed = reconstruct(&input, tokens);
+        assert_eq!(reconstructed, input);
     }
 
     #[test]
@@ -424,9 +583,10 @@ mod test {
         assert_eq!(tokens, [T![ws], T![line_continuation], T![EOF],]);
         let input = "this &_\r\nthat";
         let mut lexer = Lexer::new(input);
-        let tokens: Vec<_> = lexer.tokenize().iter().map(|t| t.kind).collect();
+        let tokens = lexer.tokenize();
+        let token_kinds: Vec<_> = tokens.iter().map(|t| t.kind).collect();
         assert_eq!(
-            tokens,
+            token_kinds,
             [
                 T![ident],
                 T![ws],
@@ -436,6 +596,8 @@ mod test {
                 T![EOF],
             ]
         );
+        let reconstructed = reconstruct(&input, tokens);
+        assert_eq!(reconstructed, input);
     }
 
     #[test]
@@ -443,8 +605,11 @@ mod test {
         // CRLF should get processed as a single newline
         let input = "\r\n\n\r";
         let mut lexer = Lexer::new(input);
-        let tokens: Vec<_> = lexer.tokenize().iter().map(|t| t.kind).collect();
-        assert_eq!(tokens, [T![nl], T![nl], T![nl], T![EOF],]);
+        let tokens = lexer.tokenize();
+        let token_kinds: Vec<_> = tokens.iter().map(|t| t.kind).collect();
+        assert_eq!(token_kinds, [T![nl], T![nl], T![nl], T![EOF],]);
+        let reconstructed = reconstruct(&input, tokens);
+        assert_eq!(reconstructed, input);
     }
 
     #[test]
@@ -460,14 +625,19 @@ mod test {
                 Token::eof(0..0)
             ]
         );
+        let reconstructed = reconstruct(&input, tokens);
+        assert_eq!(reconstructed, input);
     }
 
     #[test]
     fn test_identifier_can_end_with_underscore() {
         let input = "x_";
         let mut lexer = Lexer::new(input);
-        let tokens: Vec<_> = lexer.tokenize().iter().map(|t| t.kind).collect();
-        assert_eq!(tokens, [T![ident], T![EOF],]);
+        let tokens = lexer.tokenize();
+        let token_kinds: Vec<_> = tokens.iter().map(|t| t.kind).collect();
+        assert_eq!(token_kinds, [T![ident], T![EOF],]);
+        let reconstructed = reconstruct(&input, tokens);
+        assert_eq!(reconstructed, input);
     }
 
     #[test]
@@ -477,6 +647,8 @@ mod test {
         let tokens: Vec<_> = lexer.tokenize();
         let token_kinds = tokens.iter().map(|t| t.kind).collect::<Vec<_>>();
         assert_eq!(token_kinds, [T![real_literal], T![EOF],]);
+        let reconstructed = reconstruct(&input, tokens);
+        assert_eq!(reconstructed, input);
     }
 
     #[test]
@@ -486,6 +658,8 @@ mod test {
         let tokens: Vec<_> = lexer.tokenize();
         let token_kinds = tokens.iter().map(|t| t.kind).collect::<Vec<_>>();
         assert_eq!(token_kinds, [T![real_literal], T![EOF],]);
+        let reconstructed = reconstruct(&input, tokens);
+        assert_eq!(reconstructed, input);
     }
 
     #[test]
@@ -495,6 +669,8 @@ mod test {
         let tokens: Vec<_> = lexer.tokenize();
         let token_kinds = tokens.iter().map(|t| t.kind).collect::<Vec<_>>();
         assert_eq!(token_kinds, [T![ws], T![real_literal], T![EOF],]);
+        let reconstructed = reconstruct(&input, tokens);
+        assert_eq!(reconstructed, input);
     }
 
     #[test]
@@ -504,10 +680,39 @@ mod test {
         let tokens: Vec<_> = lexer.tokenize();
         let token_kinds = tokens.iter().map(|t| t.kind).collect::<Vec<_>>();
         assert_eq!(token_kinds, [T![real_literal], T![EOF],]);
+        let reconstructed = reconstruct(&input, tokens);
+        assert_eq!(reconstructed, input);
     }
 
     #[test]
-    fn tokenize_spaced_property_access() {
+    fn tokenize_member_access() {
+        // for member access there can't be a space between the object and the dot
+        let input = "o.s";
+        let mut lexer = Lexer::new(input);
+        let tokens: Vec<_> = lexer.tokenize();
+        let token_kinds = tokens.iter().map(|t| t.kind).collect::<Vec<_>>();
+        assert_eq!(token_kinds, [T![ident], T![_.], T![ident], T![EOF],]);
+        let reconstructed = reconstruct(&input, tokens);
+        assert_eq!(reconstructed, input);
+    }
+
+    #[test]
+    fn tokenize_member_access_2() {
+        // whitespace behind the dot and the member is allowed
+        let input = "o. s";
+        let mut lexer = Lexer::new(input);
+        let tokens: Vec<_> = lexer.tokenize();
+        let token_kinds = tokens.iter().map(|t| t.kind).collect::<Vec<_>>();
+        assert_eq!(
+            token_kinds,
+            [T![ident], T![_.], T![ws], T![ident], T![EOF],]
+        );
+        let reconstructed = reconstruct(&input, tokens);
+        assert_eq!(reconstructed, input);
+    }
+
+    #[test]
+    fn tokenize_spaced_member_access() {
         // This should even work with _ between the . and the property name
         let input = "o. _\n s";
         let mut lexer = Lexer::new(input);
@@ -517,7 +722,7 @@ mod test {
             token_kinds,
             [
                 T![ident],
-                T![.],
+                T![_.],
                 T![ws],
                 T![line_continuation],
                 T![ws],
@@ -525,15 +730,68 @@ mod test {
                 T![EOF],
             ]
         );
+        let reconstructed = reconstruct(&input, tokens);
+        assert_eq!(reconstructed, input);
     }
 
     #[test]
-    fn tokenize_spaced_property_access_invalid() {
+    fn tokenize_member_access_invalid() {
         // Fails on windows with: runtime error: Invalid or unqualified reference
-        let input = "o  .s";
+        let input = "o .s";
         let mut lexer = Lexer::new(input);
         let tokens: Vec<_> = lexer.tokenize();
         let token_kinds = tokens.iter().map(|t| t.kind).collect::<Vec<_>>();
         assert_eq!(token_kinds, [T![ident], T![ws], T![.], T![ident], T![EOF],]);
+        let reconstructed = reconstruct(&input, tokens);
+        assert_eq!(reconstructed, input);
+    }
+
+    #[test]
+    fn multi_level_member_access() {
+        let input = "obj.prop1.prop2.prop3";
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let token_types: Vec<_> = tokens.iter().map(|t| t.kind).collect();
+        assert_eq!(
+            token_types,
+            vec![
+                T![ident],
+                T![_.],
+                T![ident],
+                T![_.],
+                T![ident],
+                T![_.],
+                T![ident],
+                T![EOF],
+            ]
+        );
+        let reconstructed = reconstruct(&input, tokens);
+        assert_eq!(reconstructed, input);
+    }
+
+    #[test]
+    fn tokenize_date_literals() {
+        // Fails on windows with: runtime error: Invalid or unqualified reference
+        let input = "#1/1/2000# #12/31/2000# #1899-12-31# #112-31# # 1/1/2011 #";
+        let mut lexer = Lexer::new(input);
+        let tokens: Vec<_> = lexer.tokenize();
+        let token_kinds = tokens.iter().map(|t| t.kind).collect::<Vec<_>>();
+        assert_eq!(
+            token_kinds,
+            [
+                T![date_time_literal],
+                T![ws],
+                T![date_time_literal],
+                T![ws],
+                T![date_time_literal],
+                T![ws],
+                T![date_time_literal],
+                T![ws],
+                T![date_time_literal],
+                T![EOF],
+            ]
+        );
+        let reconstructed = reconstruct(&input, tokens);
+        assert_eq!(reconstructed, input);
     }
 }

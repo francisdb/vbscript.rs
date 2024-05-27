@@ -79,7 +79,8 @@ pub(super) enum LogosToken {
     String((usize, usize)),
     #[regex(r#"\d+"#, word_callback, priority = 6)]
     Int((usize, usize)),
-    #[regex(r#"&[Hh][0-9A-Fa-f]+"#, word_callback, priority = 6)]
+    // A & suffix means that the number is of the type Long (32 bit integer).
+    #[regex(r#"&[Hh][0-9A-Fa-f]+&?"#, word_callback, priority = 6)]
     HexInt((usize, usize)),
     #[regex(r#"&[0-7]+"#, word_callback, priority = 6)]
     OctalInt((usize, usize)),
@@ -89,6 +90,13 @@ pub(super) enum LogosToken {
         priority = 100
     )]
     Float((usize, usize)),
+    // TODO what is that last date format, test on windows!
+    #[regex(
+        r#"# *\d\d?/\d[0-2]?/\d{4} *#|#\d{4}-\d[0-2]?-\d\d?#|#\d{3}-\d\d?#"#,
+        word_callback
+    )]
+    DateTime((usize, usize)),
+
     #[regex(r#"([A-Za-z])([A-Za-z]|_|\d)*"#, word_callback)]
     Ident((usize, usize)),
 
@@ -243,6 +251,10 @@ pub(super) enum LogosToken {
     KwXor((usize, usize)),
     #[token("stop", word_callback, ignore(ascii_case))]
     KwStop((usize, usize)),
+    // We can't merge this one with comment because x.rem is a valid member access
+    // and'd we ant validate that rem is not preceded by a dot unless we enable lookbehind
+    #[token("rem", word_callback, ignore(ascii_case))]
+    KwRem((usize, usize)),
     /// Represents reserved keywords but that are not actually in use
     /// https://isvbscriptdead.com/reserved-keywords/
     // As, Byte, Boolean, Double, Integer, Long, Single, Stop, Variant
@@ -263,8 +275,8 @@ pub(super) enum LogosToken {
     #[regex(r"_[ \t\f]*(\r\n?|\n)", newline_callback)]
     LineContinuation((usize, usize)),
 
-    // comments using ' or REM
-    #[regex(r"(?i)'([^\r\n]*)|rem ([^\r\n]*)")]
+    // comments using '
+    #[regex(r"(?i)'([^\r\n]*)")]
     Comment,
 }
 
@@ -284,6 +296,7 @@ impl LogosToken {
             HexInt((line, column)) => (*line, *column),
             OctalInt((line, column)) => (*line, *column),
             Float((line, column)) => (*line, *column),
+            DateTime((line, column)) => (*line, *column),
             Plus((line, column)) => (*line, *column),
             Minus((line, column)) => (*line, *column),
             Times((line, column)) => (*line, *column),
@@ -351,6 +364,7 @@ impl LogosToken {
             KwPublic((line, column)) => (*line, *column),
             KwRaiseEvent((line, column)) => (*line, *column),
             KwReDim((line, column)) => (*line, *column),
+            KwRem((line, column)) => (*line, *column),
             KwResume((line, column)) => (*line, *column),
             KwRSet((line, column)) => (*line, *column),
             KwSelect((line, column)) => (*line, *column),
@@ -413,6 +427,7 @@ impl LogosToken {
             HexInt(_)    => T![hex_integer_literal],
             OctalInt(_)  => T![octal_integer_literal],
             Float(_)     => T![real_literal],
+            DateTime(_)  => T![date_time_literal],
             Ident(_)     => T![ident],
             KwAnd(_)        => T![and],
             KwByRef(_)      => T![byref],
@@ -466,6 +481,7 @@ impl LogosToken {
             KwPublic(_)  => T![public],
             KwRaiseEvent(_) => unimplemented!( "KwRaiseEvent"),
             KwReDim(_)      => T![redim],
+            KwRem(_)        => unreachable!("Should never be reached as it is handled in the lexer!"),
             KwResume(_)     => T![resume],
             KwRSet(_)       => unimplemented!( "KwRSet"),
             KwSelect(_)  => T![select],

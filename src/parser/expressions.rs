@@ -42,6 +42,8 @@ where
                 | op @ T![and]
                 | op @ T![or]
                 | op @ T![xor]
+                | op @ T![eqv]
+                | op @ T![imp]
                 | op @ T![<]
                 | op @ T![<=]
                 | op @ T![>]
@@ -83,7 +85,7 @@ where
             // The property itself is allowed to be prefixed with whitespace.
             if op == T![_.] {
                 self.consume(T![_.]);
-                let property = self.identifier("property name");
+                let property = self.member_identifier();
                 lhs = Expr::MemberExpression {
                     base: Box::new(lhs),
                     property,
@@ -159,6 +161,7 @@ where
             | lit @ T![octal_integer_literal]
             | lit @ T![real_literal]
             | lit @ T![string_literal]
+            | lit @ T![date_time_literal]
             | lit @ T![true]
             | lit @ T![false]
             | lit @ T![nothing]
@@ -179,11 +182,18 @@ where
                             panic!("invalid integer literal: `{literal_text}`")
                         }))
                     }
-                    T![hex_integer_literal] => Lit::Int(
-                        isize::from_str_radix(&literal_text[2..], 16).unwrap_or_else(|_| {
+                    T![hex_integer_literal] => {
+                        // trim the &H prefix
+                        // trim possible & suffix (for long hex literals)
+                        let trimmed = if literal_text.ends_with('&') {
+                            &literal_text[2..(literal_text.len() - 1)]
+                        } else {
+                            &literal_text[2..]
+                        };
+                        Lit::Int(isize::from_str_radix(trimmed, 16).unwrap_or_else(|_| {
                             panic!("invalid hex integer literal: `{literal_text}`")
-                        }),
-                    ),
+                        }))
+                    }
                     T![octal_integer_literal] => {
                         Lit::Int(isize::from_str_radix(&literal_text[2..], 8).unwrap_or_else(
                             |_| panic!("invalid octal integer literal: `{literal_text}`"),
@@ -194,8 +204,16 @@ where
                     })),
                     T![string_literal] => Lit::Str(
                         // trim the quotation marks
-                        literal_text[1..(literal_text.len() - 1)].to_string(),
+                        // replace double quotes with single quotes
+                        literal_text[1..(literal_text.len() - 1)]
+                            .to_string()
+                            .replace("\"\"", "\""),
                     ),
+                    T![date_time_literal] => {
+                        // drop the # prefix and suffix
+                        let trimmed = &literal_text[1..(literal_text.len() - 1)];
+                        Lit::DateTime(trimmed.to_string())
+                    }
                     T![true] => Lit::Bool(true),
                     T![false] => Lit::Bool(false),
                     T![nothing] => Lit::Nothing,
@@ -214,22 +232,11 @@ where
             return Expr::Literal(literal);
         }
 
+        if let Some(ident) = self.identifier_opt() {
+            return Expr::ident(ident);
+        }
+
         match self.peek() {
-            // TODO deduplicate this list with identifier()
-            //   we have seen these tokens being used as identifiers
-            T![ident]
-            | T![me]
-            | T![property]
-            | T![stop]
-            | T![option]
-            | T![step]
-            | T![default]
-            | T![set] => {
-                //let full_ident = self.ident_deep();
-                //Expr::IdentFnSubCall(full_ident)
-                let ident = self.identifier("expression identifier");
-                Expr::ident(ident)
-            }
             T![.] => {
                 self.consume(T![.]);
                 let ident = self.consume(T![ident]);
@@ -338,7 +345,7 @@ impl Operator for TokenKind {
         let result = match self {
             T![or] => (1, 2),
             T![xor] => (3, 4),
-            T![and] => (5, 6),
+            T![and] | T![eqv] | T![imp] => (5, 6),
             T![=] | T![<>] | T![is] => (7, 8),
             T![<] | T![>] | T![<=] | T![>=] => (9, 10),
             T![+] | T![-] | T![&] => (11, 12),

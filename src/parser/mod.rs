@@ -42,7 +42,7 @@ where
     pub(crate) fn peek_full(&mut self) -> &Token {
         self.tokens
             .peek()
-            .unwrap_or_else(|| panic!("Expected a token, but found none"))
+            .unwrap_or_else(|| panic!("Expected a token, but found EOF"))
     }
 
     /// Check if the next token is some `kind` of token.
@@ -73,17 +73,11 @@ where
         token
     }
 
-    /// Check if the next token is some `kind` of token and consume it.
-    pub(crate) fn consume_if_not_eof(&mut self, expected: TokenKind) {
-        if self.peek() != T![EOF] {
-            self.consume(expected);
-        }
-    }
-
     pub(crate) fn consume_line_delimiter(&mut self) {
         let peek = self.peek_full();
         match peek.kind {
             T![EOF] => {}
+            T![end] => {}
             T![nl] => {
                 self.consume(T![nl]);
             }
@@ -115,7 +109,6 @@ where
 /// Iterator over the tokens of the lexer, filtering out whitespace, empty lines and comments.
 pub struct TokenIter<'input> {
     lexer: Lexer<'input>,
-    prev_token_kind_including_ws: TokenKind,
     prev_token_kind: TokenKind,
 }
 
@@ -124,7 +117,6 @@ impl<'input> TokenIter<'input> {
         Self {
             lexer: Lexer::new(input),
             prev_token_kind: T![nl],
-            prev_token_kind_including_ws: T![nl],
         }
     }
 }
@@ -135,50 +127,33 @@ impl<'input> Iterator for TokenIter<'input> {
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             let current_token = self.lexer.next()?;
-            // translate [non-whitepace, .] to [non-whitepace, _.]
-            // without lookahead/back on the lexer we can't do this kind of check
-            // TODO would it not be better to do a positive check here checking for valid cases?
-            if !matches!(
-                self.prev_token_kind_including_ws,
-                T![nl] | T![ws] | T![:] | T!['('] | T![-] | T![,]
-            ) && matches!(current_token.kind, T![.])
-            {
-                let repacement_token = Token {
-                    kind: T![_.],
-                    span: current_token.span,
-                    line: current_token.line,
-                    column: current_token.column,
-                };
-                self.prev_token_kind_including_ws = repacement_token.kind;
-                self.prev_token_kind = repacement_token.kind;
-                return Some(repacement_token);
-            }
 
             // ignore whitespace
             if matches!(current_token.kind, T![ws]) {
-                self.prev_token_kind_including_ws = current_token.kind;
                 continue;
             }
             if matches!(current_token.kind, T![line_continuation]) {
                 // the lexer already consumes the newline
-                self.prev_token_kind_including_ws = current_token.kind;
                 continue;
             }
             // skip empty lines
             if matches!(self.prev_token_kind, T![nl]) && matches!(current_token.kind, T![nl]) {
                 self.prev_token_kind = current_token.kind;
-                self.prev_token_kind_including_ws = current_token.kind;
+                continue;
+            }
+            // skip empty inline lines
+            if matches!(self.prev_token_kind, T![:] | T![nl]) && matches!(current_token.kind, T![:])
+            {
+                self.prev_token_kind = current_token.kind;
                 continue;
             }
             // skip single line comments that are preceded by a newline
             if matches!(self.prev_token_kind, T![nl]) && matches!(current_token.kind, T![comment]) {
                 // hacky way to not keep the comment newline
                 self.prev_token_kind = T![nl];
-                self.prev_token_kind_including_ws = T![nl];
                 continue;
             }
             self.prev_token_kind = current_token.kind;
-            self.prev_token_kind_including_ws = current_token.kind;
             if !matches!(current_token.kind, T![comment]) {
                 return Some(current_token);
             } // else continue
@@ -190,7 +165,7 @@ impl<'input> Iterator for TokenIter<'input> {
 mod test {
     use super::*;
     use crate::parser::ast::ErrorClause::{Goto0, ResumeNext};
-    use crate::parser::ast::Expr::WithScoped;
+    use crate::parser::ast::Expr::{InfixOp, WithScoped};
     use crate::parser::ast::Stmt::OnError;
     use crate::parser::ast::{
         Argument, ArgumentType, Case, DoLoopCheck, DoLoopCondition, Expr, FullIdent, Item, Lit,
@@ -776,6 +751,26 @@ Const a = 1			' some info
     }
 
     #[test]
+    fn parse_sub_with_array_argument() {
+        let input = indoc! {r#"
+            Sub test (byref a())
+                'print a
+            End Sub
+        "#};
+        let mut parser = Parser::new(input);
+        let stmt = parser.statement(true);
+        assert_eq!(
+            stmt,
+            Stmt::Sub {
+                visibility: Visibility::Default,
+                name: "test".to_string(),
+                parameters: vec![Argument::ByRef("a".to_string())],
+                body: vec![],
+            }
+        );
+    }
+
+    #[test]
     fn parse_byval_byref() {
         let input = indoc! {r#"
             Sub test (ByRef a)
@@ -826,9 +821,27 @@ Const a = 1			' some info
     }
 
     #[test]
+    fn test_parse_file_empty_with_colons() {
+        let input = ":: ::";
+        let mut parser = Parser::new(input);
+        let all = parser.file();
+        assert_eq!(all, vec![]);
+    }
+
+    #[test]
+    fn test_parse_file_empty_with_colon_and_newline() {
+        let input = ":\r\n";
+        let mut parser = Parser::new(input);
+        let all = parser.file();
+        assert_eq!(all, vec![]);
+    }
+
+    #[test]
     fn test_parse_file_empty_with_comments() {
         let input = indoc! {"
             ' This is a comment
+
+            REM This is a rem comment
 
             ' This is another comment without newline"};
         let mut parser = Parser::new(input);
@@ -847,7 +860,7 @@ Const a = 1			' some info
     }
 
     #[test]
-    fn parse_option_and_randomize_on_slingle_line() {
+    fn parse_option_and_randomize_on_single_line() {
         let input = "Option Explicit : Randomize";
         let mut parser = Parser::new(input);
         let all = parser.file();
@@ -2441,6 +2454,22 @@ Const a = 1			' some info
     }
 
     #[test]
+    fn test_parse_function_single_line_without_colons() {
+        let input = "Function NullFunction(a) End Function";
+        let mut parser = Parser::new(input);
+        let items = parser.file();
+        assert_eq!(
+            items,
+            vec![Item::Statement(Stmt::Function {
+                visibility: Visibility::Default,
+                name: "NullFunction".to_string(),
+                parameters: vec![Argument::ByVal("a".to_string())],
+                body: vec![],
+            })]
+        );
+    }
+
+    #[test]
     fn test_parse_do_while_loop() {
         let input = indoc! {r#"
             Do While x > 0
@@ -2626,6 +2655,418 @@ Const a = 1			' some info
                     "Step"
                 )
             )
+        );
+    }
+
+    #[test]
+    fn test_error_as_identifier() {
+        let input = "Dim Error: Error = 42";
+        let mut parser = Parser::new(input);
+        let file = parser.file();
+        #[rustfmt::skip]
+        assert_eq!(
+            file,
+            vec![
+                Item::Statement(Stmt::Dim {
+                    vars: vec![("Error".to_string(), vec![])],
+                }),
+                Item::Statement(Stmt::Assignment {
+                    full_ident: FullIdent::ident("Error"),
+                    value: Box::new(Expr::int(42)),
+                }),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_end_sub_where_end_if_optional() {
+        let input = indoc! {r#"
+            Sub MySub
+                if true Then x = 1:
+            end Sub
+        "#};
+        let mut parser = Parser::new(input);
+        let file = parser.file();
+        #[rustfmt::skip]
+        assert_eq!(
+            file,
+            vec![
+                Item::Statement(
+                    Stmt::Sub {
+                        visibility: Visibility::Default,
+                        name: "MySub".to_string(),
+                        parameters: vec![],
+                        body: vec![
+                            Stmt::IfStmt {
+                                condition: Box::new(Expr::bool(true)),
+                                body: vec![
+                                    Stmt::Assignment {
+                                        full_ident: FullIdent::ident("x"),
+                                        value: Box::new(Expr::int(1)),
+                                    },
+                                ],
+                                elseif_statements: vec![],
+                                else_stmt: None,
+                            },
+                        ],
+                    }
+                )
+            ]
+        );
+    }
+
+    #[test]
+    #[should_panic = "2:27 Expected to consume `if`, but found `sub`"]
+    fn parse_fail_when_end_sub_not_on_newline() {
+        // Windows: compilation error: Expected 'If'
+        let input = indoc! {r#"
+            Sub MySub
+                if true Then x = 1:end Sub
+        "#};
+        Parser::new(input).file();
+    }
+
+    #[test]
+    fn parse_class_named_property() {
+        let input = indoc! {r#"
+            Class Property
+                Sub Property(byref property)
+                End Sub
+            End Class
+            Class Property2
+                Function Property()
+                End Function
+            End Class
+        "#};
+        let mut parser = Parser::new(input);
+        let file = parser.file();
+        #[rustfmt::skip]
+        assert_eq!(
+            file,
+            vec![
+                Item::Class{
+                    name: "Property".to_string(),
+                    members: vec![],
+                    dims: vec![],
+                    member_accessors: vec![],
+                    methods: vec![
+                        Stmt::Sub {
+                            visibility: Visibility::Default,
+                            name: "Property".to_string(),
+                            parameters: vec![Argument::ByRef("property".to_string())],
+                            body: vec![],
+                        },
+                    ],
+                },
+                Item::Class{
+                    name: "Property2".to_string(),
+                    members: vec![],
+                    dims: vec![],
+                    member_accessors: vec![],
+                    methods: vec![
+                        Stmt::Function {
+                            visibility: Visibility::Default,
+                            name: "Property".to_string(),
+                            parameters: vec![],
+                            body: vec![],
+                        },
+                    ],
+                },
+            ]
+        );
+    }
+
+    #[test]
+    #[should_panic = "Name redefined"]
+    fn parse_fail_duplicate() {
+        let input = indoc! {r#"
+            Class Property
+                Dim dUpE
+                Sub dupe
+                End Sub
+                Function Dupe
+                End Function
+            End Class
+        "#};
+        Parser::new(input).file();
+    }
+
+    #[test]
+    fn parse_allowed_keyword_identifiers() {
+        let input = indoc! {r#"
+            Dim default
+            default = 1
+            Dim error
+            error = 2
+            Dim explicit
+            explicit = 3
+            Dim step
+            step = 4
+            Dim property
+            property = 5
+        "#};
+        let mut parser = Parser::new(input);
+        let file = parser.file();
+        #[rustfmt::skip]
+        assert_eq!(
+            file,
+            vec![
+                Item::Statement(Stmt::Dim {
+                    vars: vec![("default".to_string(), vec![])],
+                }),
+                Item::Statement(Stmt::Assignment {
+                    full_ident: FullIdent::ident("default"),
+                    value: Box::new(Expr::int(1)),
+                }),
+                Item::Statement(Stmt::Dim {
+                    vars: vec![("error".to_string(), vec![])],
+                }),
+                Item::Statement(Stmt::Assignment {
+                    full_ident: FullIdent::ident("error"),
+                    value: Box::new(Expr::int(2)),
+                }),
+                Item::Statement(Stmt::Dim {
+                    vars: vec![("explicit".to_string(), vec![])],
+                }),
+                Item::Statement(Stmt::Assignment {
+                    full_ident: FullIdent::ident("explicit"),
+                    value: Box::new(Expr::int(3)),
+                }),
+                Item::Statement(Stmt::Dim {
+                    vars: vec![("step".to_string(), vec![])],
+                }),
+                Item::Statement(Stmt::Assignment {
+                    full_ident: FullIdent::ident("step"),
+                    value: Box::new(Expr::int(4)),
+                }),
+                Item::Statement(Stmt::Dim {
+                    vars: vec![("property".to_string(), vec![])],
+                }),
+                Item::Statement(Stmt::Assignment {
+                    full_ident: FullIdent::ident("property"),
+                    value: Box::new(Expr::int(5)),
+                }),
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_call_with_keyword_identifier() {
+        let input = indoc! {r#"
+            Call ok(error = "xx", "error = " & error & " expected ""xx""")
+        "#};
+        let mut parser = Parser::new(input);
+        let file = parser.file();
+        #[rustfmt::skip]
+        assert_eq!(
+            file,
+            vec![
+                Item::Statement(Stmt::Call(FullIdent::new(
+                    Expr::fn_application(
+                        Expr::ident("ok"),
+                        vec![
+                            Expr::InfixOp {
+                                op: T![=],
+                                lhs: Box::new(Expr::ident("error")),
+                                rhs: Box::new(Expr::str("xx")),
+                            },
+                            Expr::InfixOp {
+                                op: T![&],
+                                lhs: Box::new(Expr::InfixOp {
+                                    op: T![&],
+                                    lhs: Box::new(Expr::str("error = ")),
+                                    rhs: Box::new(Expr::ident("error")),
+                                }),
+                                rhs: Box::new(Expr::str(" expected \"xx\"")),
+                            },
+                        ]
+                    )
+                ))),
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_member_access_with_rem() {
+        // this is a special case because `rem` is normally used for comments
+        let input = indoc! {r#"
+            rem this is a comment!
+            obj.rem = 10
+        "#};
+        let mut parser = Parser::new(input);
+        // read all tokens seen from the parser
+        let mut tokens = vec![];
+        while let Some(next) = parser.next() {
+            tokens.push(next.kind);
+        }
+        assert_eq!(
+            tokens,
+            vec![
+                T![ident],
+                T![_.],
+                T![ident],
+                T![=],
+                T![integer_literal],
+                T![nl],
+                T![EOF],
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_member_access_with_keywords() {
+        // If an object is created outside vbscript and passed in,
+        // it can have all kinds of properties and methods that are not
+        // valid in vbscript. But these are still accessible using dot notation.
+        let input = indoc! {r#"
+            obj.rem = 10
+            obj.true = 10
+            obj.false = 10
+            obj.not = 10
+            obj.and = 10
+            obj.or = 10
+            obj.xor = 10
+            obj.eqv = 10
+            obj.imp = 10
+            obj.is = 10
+            obj.mod = 10
+            obj.call = 10
+            obj.dim = 10
+            obj.sub = 10
+            obj.function = 10
+            obj.get = 10
+            obj.let = 10
+            obj.const = 10
+            obj.if = 10
+            obj.else = 10
+            obj.elseif = 10
+            obj.end = 10
+            obj.then = 10
+            obj.exit = 10
+            obj.while = 10
+            obj.wend = 10
+            obj.do = 10
+            obj.loop = 10
+            obj.until = 10
+            obj.for = 10
+            obj.to = 10
+            obj.each = 10
+            obj.in = 10
+            obj.select = 10
+            obj.case = 10
+            obj.byref = 10
+            obj.byval = 10
+            obj.option = 10
+            obj.nothing = 10
+            obj.empty = 10
+            obj.null = 10
+            obj.class = 10
+            obj.set = 10
+            obj.new = 10
+            obj.public = 10
+            obj.private = 10
+            obj.next = 10
+            obj.on = 10
+            obj.resume = 10
+            obj.goto = 10
+            obj.with = 10
+            obj.redim = 10
+            obj.preserve = 10
+            obj.property = 10
+            obj.me = 10
+            obj.stop = 10
+            obj.step = 10
+        "#};
+
+        fn member_assign(name: &str) -> Item {
+            Item::Statement(Stmt::Assignment {
+                full_ident: FullIdent::new(Expr::member(Expr::ident("obj"), name)),
+                value: Box::new(Expr::int(10)),
+            })
+        }
+
+        let mut parser = Parser::new(input);
+        let file = parser.file();
+        #[rustfmt::skip]
+        assert_eq!(
+            file,
+            vec![
+                member_assign("rem"),
+                member_assign("true"),
+                member_assign("false"),
+                member_assign("not"),
+                member_assign("and"),
+                member_assign("or"),
+                member_assign("xor"),
+                member_assign("eqv"),
+                member_assign("imp"),
+                member_assign("is"),
+                member_assign("mod"),
+                member_assign("call"),
+                member_assign("dim"),
+                member_assign("sub"),
+                member_assign("function"),
+                member_assign("get"),
+                member_assign("let"),
+                member_assign("const"),
+                member_assign("if"),
+                member_assign("else"),
+                member_assign("elseif"),
+                member_assign("end"),
+                member_assign("then"),
+                member_assign("exit"),
+                member_assign("while"),
+                member_assign("wend"),
+                member_assign("do"),
+                member_assign("loop"),
+                member_assign("until"),
+                member_assign("for"),
+                member_assign("to"),
+                member_assign("each"),
+                member_assign("in"),
+                member_assign("select"),
+                member_assign("case"),
+                member_assign("byref"),
+                member_assign("byval"),
+                member_assign("option"),
+                member_assign("nothing"),
+                member_assign("empty"),
+                member_assign("null"),
+                member_assign("class"),
+                member_assign("set"),
+                member_assign("new"),
+                member_assign("public"),
+                member_assign("private"),
+                member_assign("next"),
+                member_assign("on"),
+                member_assign("resume"),
+                member_assign("goto"),
+                member_assign("with"),
+                member_assign("redim"),
+                member_assign("preserve"),
+                member_assign("property"),
+                member_assign("me"),
+                member_assign("stop"),
+                member_assign("step"),
+            ]
+        );
+    }
+
+    #[test]
+    fn sub_with_member_check() {
+        let input = "MySub \"test\"&.prop";
+        let mut parser = Parser::new(input);
+        let stmt = parser.statement(true);
+        assert_eq!(
+            stmt,
+            Stmt::SubCall {
+                fn_name: FullIdent::ident("MySub"),
+                args: vec![Some(InfixOp {
+                    op: T![&],
+                    lhs: Box::new(Expr::str("test")),
+                    rhs: Box::new(Expr::member(Expr::WithScoped, "prop")),
+                })],
+            }
         );
     }
 }

@@ -43,6 +43,15 @@ RUST_BACKTRACE=1 cargo test -- --nocapture try_lexing_all_vbs_files
 RUST_BACKTRACE=1 cargo test -- --nocapture try_parsing_all_vbs_files
 ```
 
+## Running the benchmarks
+
+
+To run this benchmark, use the following command:
+
+```bash
+cargo bench
+```
+
 ## Making a release
 
 We use https://github.com/MarcoIeni/release-plz which creates a release pr on every commit to master

@@ -16,3 +16,8 @@ logos = "0.14.0"
 pretty_assertions = "1.4.0"
 indoc = "2.0.5"
 glob = "0.3.1"
+criterion = "0.5.1"
+
+[[bench]]
+name = "main"
+harness = false
