@@ -1,5 +1,5 @@
-use std::fmt::Debug;
 use crate::{lexer::*, T};
+use std::fmt::Debug;
 use std::iter::Peekable;
 
 pub mod ast;
@@ -12,17 +12,23 @@ pub struct ParseError {
     column: usize,
 }
 
-
 impl ParseError {
     pub fn new<S: Into<String>>(message: S, line: usize, column: usize) -> Self {
-        Self { message: message.into(), line, column }
+        Self {
+            message: message.into(),
+            line,
+            column,
+        }
     }
 }
 
-
 impl Debug for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "ParseError at line {}, column {}: {}", self.line, self.column, self.message)
+        write!(
+            f,
+            "ParseError at line {}, column {}: {}",
+            self.line, self.column, self.message
+        )
     }
 }
 
@@ -63,7 +69,11 @@ where
     pub(crate) fn peek_full(&mut self) -> Result<&Token, ParseError> {
         match self.tokens.peek() {
             Some(token) => Ok(token),
-            None => Err(ParseError::new("Expected a token, but found EOF".to_string(),0,0)),
+            None => Err(ParseError::new(
+                "Expected a token, but found EOF".to_string(),
+                0,
+                0,
+            )),
         }
     }
 
@@ -80,38 +90,45 @@ where
     /// Move forward one token in the input and check
     /// that we pass the kind of token we expect.
     pub(crate) fn consume(&mut self, expected: TokenKind) -> Result<Token, ParseError> {
-    let token = self.next().ok_or_else(|| {
-        ParseError::new(
-        format!(
-            "Expected to consume `{}`, but there was no next token",
-            expected
-        ), 0,0)
-    })?;
-    if token.kind != expected {
-        return Err( ParseError::new( format!(
-            "Expected to consume `{}`, but found `{}`",
-            expected, token.kind
-        ),token.line, token.column, ));
+        let token = self.next().ok_or_else(|| {
+            ParseError::new(
+                format!(
+                    "Expected to consume `{}`, but there was no next token",
+                    expected
+                ),
+                0,
+                0,
+            )
+        })?;
+        if token.kind != expected {
+            return Err(ParseError::new(
+                format!(
+                    "Expected to consume `{}`, but found `{}`",
+                    expected, token.kind
+                ),
+                token.line,
+                token.column,
+            ));
+        }
+        Ok(token)
     }
-    Ok(token)
-}
 
-    pub(crate) fn consume_line_delimiter(&mut self) -> Result<(), ParseError>{
+    pub(crate) fn consume_line_delimiter(&mut self) -> Result<(), ParseError> {
         let peek = self.peek_full()?;
         match peek.kind {
             T![EOF] => {}
             T![end] => {}
             T![nl] => {
-                self.consume(T![nl]);
+                self.consume(T![nl])?;
             }
             T![:] => {
-                self.consume(T![:]);
+                self.consume(T![:])?;
                 // if there is a newline directly after the colon, consume it
                 if self.at(T![nl]) {
-                    self.consume(T![nl]);
+                    self.consume(T![nl])?;
                 }
             }
-            other =>
+            other => {
                 return Err(ParseError::new(
                     format!(
                         "Unexpected token Expected newline or colon, but found {}",
@@ -119,8 +136,8 @@ where
                     ),
                     peek.line,
                     peek.column,
-                )
-            ),
+                ))
+            }
         };
         Ok(())
     }
@@ -377,7 +394,7 @@ Const a = 1			' some info
                 x = 4
             end if
         "#};
-        let stmt = parse_stmt(input,true);
+        let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
             Stmt::IfStmt {
@@ -1450,7 +1467,7 @@ Const a = 1			' some info
     }
 
     #[test]
-    #[should_panic = "2:12 Expected `sub` or `function` after visibility, but found `const`"]
+    #[should_panic = "ParseError at line 2, column 13: Expected `sub` or `function` after visibility, but found `const`"]
     fn parse_const_private_nested_fail() {
         // not allowed on windows
         let input = indoc! {r#"
@@ -2269,7 +2286,7 @@ Const a = 1			' some info
     #[test]
     fn test_statement_do_not_expect_end() {
         let input = "DoSomething(1),0";
-        let stmt = parse_stmt(input,true);
+        let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
             Stmt::SubCall {
@@ -2284,7 +2301,7 @@ Const a = 1			' some info
     fn test_statement_no_parenthesis_when_calling_sub() {
         // compilation error: Cannot use parentheses when calling a Sub
         let input = "DoSomething(0,0)";
-        parse_stmt(input,true);
+        parse_stmt(input, true);
     }
 
     #[test]
@@ -2292,7 +2309,7 @@ Const a = 1			' some info
     fn test_statement_no_parenthesis_when_calling_deep_sub() {
         // compilation error: Cannot use parentheses when calling a Sub
         let input = "SomeArray(1,2).DoSomething(0,0,3)";
-        parse_stmt(input,true);
+        parse_stmt(input, true);
     }
 
     #[test]
@@ -2300,7 +2317,7 @@ Const a = 1			' some info
     fn test_statement_no_parenthesis_when_calling_sub_and_invalid_statement() {
         // compilation error: Cannot use parentheses when calling a Sub
         let input = "something(0,0) + 1";
-        parse_stmt(input,true);
+        parse_stmt(input, true);
     }
 
     #[test]
@@ -2309,7 +2326,7 @@ Const a = 1			' some info
         // but here they are part of the sub call first argument.
         // Would the space in front of the parens make a difference?
         let input = "DoSomething (x + y) * z";
-        let stmt = parse_stmt(input,true);
+        let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
             Stmt::SubCall {
@@ -2333,7 +2350,7 @@ Const a = 1			' some info
         // but here they are part of the sub call first argument.
         // Would the space in front of the parens make a difference?
         let input = "DoSomething z * (x + y)";
-        let stmt = parse_stmt(input,true);
+        let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
             Stmt::SubCall {
@@ -2355,7 +2372,7 @@ Const a = 1			' some info
     fn test_parse_function_or_array_call_with_parens() {
         // This is tricky because the parens are used for both function calls, array access
         let input = "x = AddScore(x + y) * z";
-        let stmt = parse_stmt(input,true);
+        let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
             Stmt::Assignment {
@@ -2379,7 +2396,7 @@ Const a = 1			' some info
     #[test]
     fn parse_dim_call_with_nested_empty_args() {
         let input = r#"MySub MyFn(0, , -1)"#;
-        let stmt = parse_stmt(input,true);
+        let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
             Stmt::SubCall {
@@ -2582,7 +2599,7 @@ Const a = 1			' some info
     #[test]
     fn test_property_access_in_args_without_space() {
         let input = "Foo 1,.enabled";
-        let stmt = parse_stmt(input,true);
+        let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
             Stmt::SubCall {
@@ -2598,7 +2615,7 @@ Const a = 1			' some info
     #[test]
     fn test_step_as_identifier() {
         let input = "x=y.Step";
-        let stmt = parse_stmt(input,true);
+        let stmt = parse_stmt(input, true);
         #[rustfmt::skip]
         assert_eq!(
             stmt,
@@ -2668,14 +2685,14 @@ Const a = 1			' some info
     }
 
     #[test]
-    #[should_panic = "2:27 Expected to consume `if`, but found `sub`"]
+    #[should_panic = "ParseError at line 2, column 28: Expected to consume `if`, but found `sub`"]
     fn parse_fail_when_end_sub_not_on_newline() {
         // Windows: compilation error: Expected 'If'
         let input = indoc! {r#"
             Sub MySub
                 if true Then x = 1:end Sub
         "#};
-        Parser::new(input).file();
+        parse_file(input);
     }
 
     #[test]
@@ -2739,7 +2756,7 @@ Const a = 1			' some info
                 End Function
             End Class
         "#};
-        Parser::new(input).file();
+        parse_file(input);
     }
 
     #[test]

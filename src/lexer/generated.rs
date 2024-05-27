@@ -283,7 +283,7 @@ pub(super) enum LogosToken {
 impl LogosToken {
     pub fn line_column(&self) -> (usize, usize) {
         use LogosToken::*;
-        let mut line_col = match self {
+        let line_col = match self {
             Dot((line, column)) => (*line, *column),
             //DotSuffix((line, column)) => (*line, *column),
             NewLine((line, _)) => (*line, 0),
@@ -391,11 +391,9 @@ impl LogosToken {
             Comment => (0, 0),
             LineContinuation((line, column)) => (*line, *column),
         };
-        // further down lines are 1-indexed
-        if line_col.0 > 0 {
-            line_col.0 += 1;
-        }
-        line_col
+        // line and column are 0-indexed
+        // further down lines and columns are 1-indexed
+        (line_col.0 + 1, line_col.1 + 1)
     }
 
     #[rustfmt::skip]

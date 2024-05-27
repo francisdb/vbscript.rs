@@ -9,7 +9,10 @@ impl<'input, I> Parser<'input, I>
 where
     I: Iterator<Item = Token>,
 {
-    pub fn expression_with_prefix(&mut self, first_expression_part: Option<Expr>) -> Result<Expr, ParseError> {
+    pub fn expression_with_prefix(
+        &mut self,
+        first_expression_part: Option<Expr>,
+    ) -> Result<Expr, ParseError> {
         self.parse_expression_with_prefix(0, first_expression_part)
     }
 
@@ -26,7 +29,10 @@ where
         binding_power: u8,
         first_expression_part: Option<Expr>,
     ) -> Result<Expr, ParseError> {
-        let mut lhs = first_expression_part.unwrap_or_else(|| self.parse_expression_lhs()?);
+        let mut lhs = match first_expression_part {
+            Some(expr) => expr,
+            None => self.parse_expression_lhs()?,
+        };
         loop {
             let op = match self.peek() {
                 op @ T![+]
@@ -100,7 +106,7 @@ where
                     break;
                 }
 
-                self.consume(op);
+                self.consume(op)?;
                 let rhs = self.parse_expression(right_binding_power)?;
                 lhs = Expr::InfixOp {
                     op,
@@ -113,9 +119,10 @@ where
                 // break; // Not an operator --> end of expression
                 let token = *self.peek_full()?;
                 let span = self.text(&token);
-                return Err(ParseError::new(format!(
-                    "No binding power for operator `{op}` in expression: {span}"),
-                    token.line, token.column
+                return Err(ParseError::new(
+                    format!("No binding power for operator `{op}` in expression: {span}"),
+                    token.line,
+                    token.column,
                 ));
             }
         }
@@ -133,25 +140,25 @@ where
                     Lit::Float(f) => Ok(Lit::Float(-f)),
                     _ => {
                         let peek = self.peek_full()?;
-                        return Err(ParseError::new(
+                        Err(ParseError::new(
                             "Expected integer or float literal for unary minus",
                             peek.line,
-                            peek.column
+                            peek.column,
                         ))
                     }
                 })
             }
             _ => self.parse_literal().map(Ok),
-        }?;
+        };
         match lit {
-            Some(lit) => Ok(lit),
+            Some(lit) => Ok(lit?),
             None => {
                 let token = self.peek_full()?;
-                return Err(ParseError::new(
+                Err(ParseError::new(
                     "Expected literal for constant",
                     token.line,
                     token.column,
-                ));
+                ))
             }
         }
     }
@@ -234,7 +241,7 @@ where
             return Ok(Expr::Literal(literal));
         }
 
-        if let Some(ident) = self.identifier_opt() {
+        if let Some(ident) = self.identifier_opt()? {
             return Ok(Expr::ident(ident));
         }
 
@@ -249,7 +256,7 @@ where
                 }
             }
             T![new] => {
-                self.consume(T![new]);
+                self.consume(T![new])?;
                 let ident = self.consume(T![ident])?;
                 let class_name = self.text(&ident);
                 Expr::new(class_name)
@@ -263,7 +270,7 @@ where
                 expr
             }
             op @ T![+] | op @ T![-] | op @ T![not] => {
-                self.consume(op);
+                self.consume(op)?;
                 let ((), right_binding_power) = op.prefix_binding_power();
                 // NEW!
                 let expr = self.parse_expression(right_binding_power)?;
@@ -300,7 +307,9 @@ where
         Ok(arguments)
     }
 
-    pub(crate) fn parenthesized_optional_arguments(&mut self) -> Result<Vec<Option<Expr>>, ParseError> {
+    pub(crate) fn parenthesized_optional_arguments(
+        &mut self,
+    ) -> Result<Vec<Option<Expr>>, ParseError> {
         let mut arguments = Vec::new();
         if self.at(T!['(']) {
             self.consume(T!['('])?;
@@ -544,7 +553,7 @@ mod test {
             expr,
             Expr::InfixOp {
                 op: T![=],
-                lhs: Box::new(Expr::MemberExpression {
+                lhs: Box::new(MemberExpression {
                     base: Box::new(Expr::ident("foo")),
                     property: "enabled".to_string(),
                 }),

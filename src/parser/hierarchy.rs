@@ -1,9 +1,6 @@
 use crate::lexer::{Token, TokenKind};
 use crate::parser::ast::Expr::WithScoped;
-use crate::parser::ast::{
-    Argument, ArgumentType, Case, DoLoopCheck, DoLoopCondition, ErrorClause, Expr, FullIdent, Item,
-    MemberAccess, MemberDefinitions, PropertyType, PropertyVisibility, SetRhs, Stmt, Visibility,
-};
+use crate::parser::ast::{Argument, ArgumentType, Case, ClassDim, DoLoopCheck, DoLoopCondition, ErrorClause, Expr, FullIdent, Item, MemberAccess, MemberDefinitions, PropertyType, PropertyVisibility, SetRhs, Stmt, Visibility};
 use crate::parser::{ast, ParseError, Parser};
 use crate::T;
 use std::collections::HashSet;
@@ -21,13 +18,13 @@ where
                 self.consume(T![nl])?;
                 continue;
             }
-            let item = self.item();
+            let item = self.item()?;
             items.push(item);
         }
         Ok(items)
     }
 
-    pub fn item(&mut self) ->  Result<Item, ParseError> {
+    pub fn item(&mut self) -> Result<Item, ParseError> {
         let item = match self.peek() {
             T![option] => self.item_option()?,
             vis @ T![public] | vis @ T![private] => {
@@ -39,17 +36,17 @@ where
 
                 match self.peek() {
                     T![function] => {
-                        let item = Item::Statement(self.statement_function(visibility));
+                        let item = Item::Statement(self.statement_function(visibility)?);
                         self.consume_line_delimiter()?;
                         item
                     }
                     T![sub] => {
-                        let item = Item::Statement(self.statement_sub(visibility));
+                        let item = Item::Statement(self.statement_sub(visibility)?);
                         self.consume_line_delimiter()?;
                         item
                     }
-                    T![const] => self.item_const(visibility),
-                    T![ident] => self.item_variable(visibility),
+                    T![const] => self.item_const(visibility)?,
+                    T![ident] => self.item_variable(visibility)?,
                     _ => {
                         let peek = self.peek_full()?;
                         return Err(ParseError::new(
@@ -63,55 +60,55 @@ where
                     }
                 }
             }
-            T![class] => self.item_class(),
-            T![const] => self.item_const(Visibility::Public),
+            T![class] => self.item_class()?,
+            T![const] => self.item_const(Visibility::Public)?,
             _ => {
                 // this must be a statement
-                let stmt = self.statement(true);
+                let stmt = self.statement(true)?;
                 Item::Statement(stmt)
             }
         };
         Ok(item)
     }
 
-    fn item_const(&mut self, visibility: Visibility) -> Item {
-        self.consume(T![const]);
+    fn item_const(&mut self, visibility: Visibility) -> Result<Item, ParseError> {
+        self.consume(T![const])?;
         let mut values = Vec::new();
         while !self.at(T![nl]) && !self.at(T![EOF]) {
-            let name = self.identifier("const name");
-            self.consume(T![=]);
-            let literal = self.parse_const_literal();
+            let name = self.identifier("const name")?;
+            self.consume(T![=])?;
+            let literal = self.parse_const_literal()?;
             values.push((name, literal));
             if self.at(T![,]) {
-                self.consume(T![,]);
+                self.consume(T![,])?;
             } else {
                 break;
             }
         }
-        self.consume_line_delimiter();
-        Item::Const { visibility, values }
+        self.consume_line_delimiter()?;
+        Ok(Item::Const { visibility, values })
     }
 
-    fn item_variable(&mut self, visibility: Visibility) -> Item {
+    fn item_variable(&mut self, visibility: Visibility) -> Result<Item, ParseError> {
         let mut vars = Vec::new();
         while !self.at(T![nl]) && !self.at(T![EOF]) {
-            let ident = self.consume(T![ident]);
+            let ident = self.consume(T![ident])?;
             let name = self.text(&ident).to_string();
-            let bounds = self.const_bounds();
+            let bounds = self.const_bounds()?;
             vars.push((name, bounds));
             if self.at(T![,]) {
-                self.consume(T![,]);
+                self.consume(T![,])?;
             } else {
                 break;
             }
         }
-        self.consume_line_delimiter();
-        Item::Variable { visibility, vars }
+        self.consume_line_delimiter()?;
+        Ok(Item::Variable { visibility, vars })
     }
 
     fn item_class(&mut self) -> Result<Item, ParseError> {
         self.consume(T![class])?;
-        let name = self.identifier("class name");
+        let name = self.identifier("class name")?;
         self.consume_line_delimiter()?;
         let mut members = Vec::new();
         let mut member_accessors = Vec::new();
@@ -200,15 +197,13 @@ where
                 member_names.insert(lower);
             }
         }
-        Ok(
-        Item::Class {
+        Ok(Item::Class {
             name,
             members,
             dims,
             member_accessors,
             methods,
-        }
-        )
+        })
     }
 
     fn class_member(&mut self, visibility: Visibility) -> Result<MemberDefinitions, ParseError> {
@@ -238,7 +233,7 @@ where
         Ok(member_definitions)
     }
 
-    fn class_dim(&mut self) -> Result<Vec<(String, Option<Vec<usize>>)>, ParseError>{
+    fn class_dim(&mut self) -> Result<ClassDim, ParseError> {
         self.consume(T![dim])?;
         let mut vars = Vec::new();
         while !self.at(T![nl]) && !self.at(T![EOF]) {
@@ -275,8 +270,8 @@ where
 
     fn class_function(&mut self, visibility: Visibility) -> Result<Stmt, ParseError> {
         self.consume(T![function])?;
-        let method_name = self.identifier("Function name");
-        let parameters = self.optional_declaration_parameter_list("Function");
+        let method_name = self.identifier("Function name")?;
+        let parameters = self.optional_declaration_parameter_list("Function")?;
         self.consume_line_delimiter()?;
         let body = self.block(true, &[T![end]])?;
         self.consume(T![end])?;
@@ -290,7 +285,11 @@ where
         })
     }
 
-    fn class_property(&mut self, default: Option<bool>, visibility: Visibility) -> Result<MemberAccess, ParseError> {
+    fn class_property(
+        &mut self,
+        default: Option<bool>,
+        visibility: Visibility,
+    ) -> Result<MemberAccess, ParseError> {
         let property_visibility = match visibility {
             Visibility::Public => PropertyVisibility::Public {
                 default: default.unwrap_or(false),
@@ -344,9 +343,14 @@ where
         })
     }
 
-    fn item_option(&mut self) -> Item {
-        self.consume(T![option]);
-        let explicit = self.next().expect("Expected identifier after `option`");
+    fn item_option(&mut self) -> Result<Item, ParseError> {
+        self.consume(T![option])?;
+        let explicit = match self.next() {
+            Some(explicit) => explicit,
+            None => {
+                return Err(ParseError::new("Expected identifier after `option`", 0, 0));
+            }
+        };
         match explicit.kind {
             T![ident] => {
                 assert_eq!(
@@ -357,14 +361,14 @@ where
             }
             _ => panic!("Expected `explicit` after `option`"),
         }
-        self.consume_line_delimiter();
-        Item::OptionExplicit
+        self.consume_line_delimiter()?;
+        Ok(Item::OptionExplicit)
     }
 
     fn statement_sub(&mut self, visibility: Visibility) -> Result<Stmt, ParseError> {
         self.consume(T![sub])?;
 
-        let ident = match self.next(){
+        let ident = match self.next() {
             Some(ident) => ident,
             None => {
                 return Err(ParseError::new(
@@ -376,7 +380,10 @@ where
         };
         if ident.kind != T![ident] {
             return Err(ParseError::new(
-                format!("Expected identifier as sub name, but found `{}`", ident.kind),
+                format!(
+                    "Expected identifier as sub name, but found `{}`",
+                    ident.kind
+                ),
                 ident.line,
                 ident.column,
             ));
@@ -400,19 +407,23 @@ where
     fn statement_function(&mut self, visibility: Visibility) -> Result<Stmt, ParseError> {
         self.consume(T![function])?;
 
-        let ident = match self.next(){
-                Some(ident) => ident,
-                None => {
-                    return Err(ParseError::new(
-                        "Tried to parse function name, but there were no more tokens",
-                        0,
-                        0,
-                    ));
-        }};
+        let ident = match self.next() {
+            Some(ident) => ident,
+            None => {
+                return Err(ParseError::new(
+                    "Tried to parse function name, but there were no more tokens",
+                    0,
+                    0,
+                ));
+            }
+        };
 
         if ident.kind != T![ident] {
             return Err(ParseError::new(
-                format!("Expected identifier as function name, but found `{}`", ident.kind),
+                format!(
+                    "Expected identifier as function name, but found `{}`",
+                    ident.kind
+                ),
                 ident.line,
                 ident.column,
             ));
@@ -428,14 +439,12 @@ where
         self.consume(T![end])?;
         self.consume(T![function])?;
 
-        Ok(
-        Stmt::Function {
+        Ok(Stmt::Function {
             visibility,
             name,
             parameters,
             body,
-        }
-        )
+        })
     }
 
     fn const_bounds(&mut self) -> Result<Option<Vec<usize>>, ParseError> {
@@ -463,7 +472,10 @@ where
     }
 
     /// Parse a list of parameters for a function or sub declaration.
-    fn optional_declaration_parameter_list(&mut self, item_type: &str) -> Result<Vec<Argument>, ParseError> {
+    fn optional_declaration_parameter_list(
+        &mut self,
+        item_type: &str,
+    ) -> Result<Vec<Argument>, ParseError> {
         let mut parameters: Vec<Argument> = Vec::new();
         if self.at(T!['(']) {
             self.consume(T!['('])?;
@@ -505,9 +517,14 @@ where
         match id {
             None => {
                 let peek = self.peek_full()?;
-                Err(
-                    ParseError::new(format!("Expected identifier as {}, but found `{}`", item_type, peek.kind), peek.line, peek.column)
-                )
+                Err(ParseError::new(
+                    format!(
+                        "Expected identifier as {}, but found `{}`",
+                        item_type, peek.kind
+                    ),
+                    peek.line,
+                    peek.column,
+                ))
             }
             Some(id) => Ok(id),
         }
@@ -533,12 +550,15 @@ where
 
     pub(crate) fn member_identifier(&mut self) -> Result<String, ParseError> {
         const ITEM_TYPE: &str = "member identifier";
-        let ident = match self.next(){
+        let ident = match self.next() {
             Some(ident) => ident,
             None => {
                 let peek_full = self.peek_full()?;
                 return Err(ParseError::new(
-                    format!("Expected identifier as {}, but found `{}`", ITEM_TYPE, peek_full.kind),
+                    format!(
+                        "Expected identifier as {}, but found `{}`",
+                        ITEM_TYPE, peek_full.kind
+                    ),
                     peek_full.line,
                     peek_full.column,
                 ));
@@ -602,18 +622,23 @@ where
             | T![me]
             | T![stop]
             | T![step] => Ok(self.text(&ident).to_string()),
-            _ => {
-                Err(ParseError::new(
-                    format!("Expected identifier as {}, but found `{}`", ITEM_TYPE, ident.kind),
-                    ident.line,
-                    ident.column,
-                ))
-            }
+            _ => Err(ParseError::new(
+                format!(
+                    "Expected identifier as {}, but found `{}`",
+                    ITEM_TYPE, ident.kind
+                ),
+                ident.line,
+                ident.column,
+            )),
         }
     }
 
     /// Parse a block of statements until we reach an `end` token.
-    pub fn block(&mut self, multi_line: bool, end_tokens: &[TokenKind]) -> Result<Vec<Stmt>, ParseError> {
+    pub fn block(
+        &mut self,
+        multi_line: bool,
+        end_tokens: &[TokenKind],
+    ) -> Result<Vec<Stmt>, ParseError> {
         let mut stmts = Vec::new();
         while !end_tokens.contains(&self.peek()) {
             if !self.at(T![nl]) && !self.at(T![:]) {
@@ -670,7 +695,10 @@ where
                     _ => {
                         let full = self.peek_full()?;
                         return Err(ParseError::new(
-                            format!("Expected `sub` or `function` after visibility, but found `{}`", full.kind),
+                            format!(
+                                "Expected `sub` or `function` after visibility, but found `{}`",
+                                full.kind
+                            ),
                             full.line,
                             full.column,
                         ));
@@ -775,7 +803,10 @@ where
     /// These however are valid: `Foo(1), 1` (translates to `Foo 1, 1`) and `Foo()`
     ///
     /// WScript returns: 'compilation error: Expected end of statement'
-    fn fail_if_using_empty_parentheses_when_calling_sub(&mut self, ident: &FullIdent) -> Result<(), ParseError> {
+    fn fail_if_using_empty_parentheses_when_calling_sub(
+        &mut self,
+        ident: &FullIdent,
+    ) -> Result<(), ParseError> {
         let inner = &ident.0;
         if let Expr::FnApplication { args, .. } = &**inner {
             if args.is_empty() && self.at(T![,]) {
@@ -787,13 +818,17 @@ where
                 ));
             }
         }
+        Ok(())
     }
 
     /// A sub call statement like `something(1,2)` or `SomeArray(1).SomeSub(1,2,3)` is not valid
     /// However a sub call statement like `something(2)` is valid as the `(2)` is considered the first argument
     ///
     /// WScript returns: 'compilation error: Cannot use parentheses when calling a Sub'
-    fn fail_if_using_parentheses_when_calling_sub(&mut self, ident: &FullIdent) -> Result<(), ParseError> {
+    fn fail_if_using_parentheses_when_calling_sub(
+        &mut self,
+        ident: &FullIdent,
+    ) -> Result<(), ParseError> {
         let inner = &ident.0;
         if let Expr::FnApplication { args, .. } = &**inner {
             if args.len() > 1 {
@@ -816,7 +851,10 @@ where
         Ok(Stmt::Call(ident))
     }
 
-    fn sub_arguments(&mut self, mut first_expression_part: Option<Expr>) -> Result<Vec<Option<Expr>>, ParseError> {
+    fn sub_arguments(
+        &mut self,
+        mut first_expression_part: Option<Expr>,
+    ) -> Result<Vec<Option<Expr>>, ParseError> {
         let mut args = Vec::new();
         // TODO first_expression_part might be ignored here!
         // TODO we should be smarter here instead of having all these end conditions
@@ -941,12 +979,13 @@ where
                 self.consume(T![sub])?;
                 Stmt::ExitSub
             }
-            other =>
+            other => {
                 return Err(ParseError::new(
                     format!("Exit not supported for `{}`", other),
                     0,
                     0,
                 ))
+            }
         };
         Ok(res)
     }
@@ -962,11 +1001,15 @@ where
         } else if self.at(T![goto]) {
             self.consume(T![goto])?;
             let token = self.consume(T![integer_literal])?;
-            let number: usize = match self
-                .text(&token)
-                .parse() {
+            let number: usize = match self.text(&token).parse() {
                 Ok(number) => number,
-                Err(_) => return Err(ParseError::new("Expected integer after `goto`", token.line, token.column)),
+                Err(_) => {
+                    return Err(ParseError::new(
+                        "Expected integer after `goto`",
+                        token.line,
+                        token.column,
+                    ))
+                }
             };
             if number != 0 {
                 return Err(ParseError::new(
@@ -1204,7 +1247,9 @@ where
         }
     }
 
-    fn optional_parenthesized_property_arguments(&mut self) -> Result<Vec<(String, ArgumentType)>, ParseError>{
+    fn optional_parenthesized_property_arguments(
+        &mut self,
+    ) -> Result<Vec<(String, ArgumentType)>, ParseError> {
         let mut property_arguments = Vec::new();
         if self.at(T!['(']) {
             self.consume(T!['('])?;
@@ -1288,7 +1333,7 @@ where
                 Expr::ident(ident)
             }
             T![.] => {
-                self.consume(T![.]);
+                self.consume(T![.])?;
                 let property = self.identifier("property")?;
                 Expr::MemberExpression {
                     base: Box::new(WithScoped),
@@ -1296,7 +1341,7 @@ where
                 }
             }
             T![new] => {
-                self.consume(T![new]);
+                self.consume(T![new])?;
                 let ident = self.consume(T![ident])?;
                 let class_name = self.text(&ident);
                 Expr::ident(class_name)
@@ -1356,7 +1401,7 @@ where
     //     }
     // }
 
-    pub fn type_(&mut self) -> ast::Type {
+    pub fn type_(&mut self) -> Result<ast::Type, ParseError> {
         let ident = self
             .next()
             .expect("Tried to parse type, but there were no more tokens");
@@ -1371,19 +1416,19 @@ where
         let mut generics = Vec::new();
 
         if self.at(T![<]) {
-            self.consume(T![<]);
+            self.consume(T![<])?;
             while !self.at(T![>]) {
                 // Generic parameters are also types
-                let generic = self.type_();
+                let generic = self.type_()?;
                 generics.push(generic);
                 if self.at(T![,]) {
-                    self.consume(T![,]);
+                    self.consume(T![,])?;
                 }
             }
-            self.consume(T![>]);
+            self.consume(T![>])?;
         }
 
-        ast::Type { name, generics }
+        Ok(ast::Type { name, generics })
     }
 }
 
@@ -1494,7 +1539,9 @@ mod test {
     }
 
     #[test]
-    #[should_panic(expected = "0:0 Expected identifier as member identifier, but found `<EOF>`")]
+    #[should_panic(
+        expected = "ParseError at line 1, column 5: Expected identifier as member identifier, but found `<EOF>`"
+    )]
     fn test_parse_ident_deep_fail_with_trailing_dot() {
         let input = "a.b.";
         parse_ident_deep(input);

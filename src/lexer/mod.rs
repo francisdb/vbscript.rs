@@ -18,7 +18,7 @@ pub type Lexer<'input> = LogosLexer<'input>;
 pub struct LogosLexer<'input> {
     generated: logos::SpannedIter<'input, LogosToken>,
     eof: bool,
-    prev_token_kind: TokenKind,
+    prev_token: Token,
     queued_token: Option<Token>,
 }
 
@@ -27,7 +27,12 @@ impl<'input> LogosLexer<'input> {
         Self {
             generated: LogosToken::lexer(input).spanned(),
             eof: false,
-            prev_token_kind: TokenKind::Newline,
+            prev_token: Token {
+                kind: T![nl],
+                span: (0..0).into(),
+                line: 1,
+                column: 1,
+            },
             queued_token: None,
         }
     }
@@ -54,7 +59,7 @@ impl<'input> Iterator for LogosLexer<'input> {
                     // Some tokens are transformed to identifiers when they are following member access
                     // TODO look at the last non-whitespace character
                     // TODO add more cases
-                    if matches!(self.prev_token_kind, T![_.]) {
+                    if matches!(self.prev_token.kind, T![_.]) {
                         match current_token {
                             LogosToken::KwTrue(_)
                             | LogosToken::KwFalse(_)
@@ -66,7 +71,7 @@ impl<'input> Iterator for LogosLexer<'input> {
                                     line,
                                     column,
                                 };
-                                self.prev_token_kind = rem_ident.kind;
+                                self.prev_token = rem_ident;
                                 return Some(rem_ident);
                             }
                             _ => {}
@@ -131,7 +136,7 @@ impl<'input> Iterator for LogosLexer<'input> {
                     // without lookahead/back on the lexer we can't do this kind of check
                     // TODO would it not be better to do a positive check here checking for valid cases?
                     if !matches!(
-                        self.prev_token_kind,
+                        self.prev_token.kind,
                         T![nl] | T![ws] | T![:] | T!['('] | T![-] | T![,] | T![&]
                     ) && matches!(current_kind, T![.])
                     {
@@ -141,40 +146,34 @@ impl<'input> Iterator for LogosLexer<'input> {
                             line,
                             column,
                         };
-                        self.prev_token_kind = replacement_token.kind;
+                        self.prev_token = replacement_token;
                         return Some(replacement_token);
                     }
-
-                    self.prev_token_kind = current_kind;
-
-                    Some(Token {
+                    let token = Token {
                         kind: current_kind,
                         span: span.into(),
                         line,
                         column,
-                    })
+                    };
+                    self.prev_token = token;
+                    Some(token)
                 }
-                Err(_) => {
-                    // TODO can we provide more information here?
-                    //   can we get the line and column number?
-                    Some(Token {
-                        kind: TokenKind::ParseError,
-                        span: span.into(),
-                        line: 0,
-                        column: 0,
-                    })
-                }
+                Err(_) => Some(Token {
+                    kind: TokenKind::ParseError,
+                    span: span.into(),
+                    line: self.prev_token.line,
+                    column: self.prev_token.column + self.prev_token.span.len() as usize,
+                }),
             },
             None if self.eof => None,
             None => {
                 self.eof = true;
-                // TODO can we provide more information here?
-                //   can we get the line and column number?
                 Some(Token {
                     kind: T![EOF],
-                    span: (0..0).into(),
-                    line: 0,
-                    column: 0,
+                    span: (self.prev_token.span.end as usize..self.prev_token.span.end as usize)
+                        .into(),
+                    line: self.prev_token.line,
+                    column: self.prev_token.column + self.prev_token.span.len() as usize,
                 })
             }
         }
@@ -625,9 +624,9 @@ mod test {
         assert_eq!(
             tokens,
             [
-                Token::error(0..1),
-                Token::ident(1..2, 0, 1),
-                Token::eof(0..0)
+                Token::error(0..1, 1, 1),
+                Token::ident(1..2, 1, 2),
+                Token::eof(2..2, 1, 3),
             ]
         );
         let reconstructed = reconstruct(&input, tokens);

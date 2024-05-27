@@ -5,32 +5,33 @@ use std::ops::{Index, Range};
 pub struct Token {
     pub kind: TokenKind,
     pub span: Span,
-    // 1-indexed, 0 means unknown
+    /// 1-indexed, 0 means unknown
     pub line: usize,
+    /// 1-indexed, 0 means unknown
     pub column: usize,
 }
 
 impl Token {
-    pub fn error(p0: Range<i32>) -> Token {
+    pub fn error(p0: Range<i32>, line: usize, column: usize) -> Token {
         Token {
             kind: TokenKind::ParseError,
             span: Span {
                 start: p0.start as u32,
                 end: p0.end as u32,
             },
-            line: 0,
-            column: 0,
+            line,
+            column,
         }
     }
-    pub fn eof(p0: Range<i32>) -> Token {
+    pub fn eof(p0: Range<i32>, line: usize, column: usize) -> Token {
         Token {
             kind: TokenKind::Eof,
             span: Span {
                 start: p0.start as u32,
                 end: p0.end as u32,
             },
-            line: 0,
-            column: 0,
+            line,
+            column,
         }
     }
 
@@ -83,6 +84,12 @@ pub struct Span {
     pub start: u32,
     /// exclusive
     pub end: u32,
+}
+
+impl Span {
+    pub(crate) fn len(&self) -> u32 {
+        self.end - self.start
+    }
 }
 
 impl From<Span> for Range<usize> {

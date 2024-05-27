@@ -513,6 +513,8 @@ pub struct MemberDefinitions {
     pub properties: Vec<(String, Option<Vec<usize>>)>,
 }
 
+pub type ClassDim = Vec<(String, Option<Vec<usize>>)>;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Item {
     // https://learn.microsoft.com/en-us/previous-versions/windows/internet-explorer/ie-developer/scripting-articles/bw9t3484%28v%3Dvs.84%29
@@ -521,7 +523,7 @@ pub enum Item {
     Class {
         name: String,
         members: Vec<MemberDefinitions>,
-        dims: Vec<Vec<(String, Option<Vec<usize>>)>>,
+        dims: Vec<ClassDim>,
         member_accessors: Vec<MemberAccess>,
         methods: Vec<Stmt>, // expect only functions and subs
     },
