@@ -15,6 +15,8 @@ Check the [examples folder](examples/)
 
 On October 2023 [Microsoft deprecated VBScript](https://learn.microsoft.com/en-us/windows/whats-new/deprecated-features). However, there are still many legacy systems that use it. This project aims to provide a lexer, parser and later interpreter for VBScript, so that it can be used in Rust projects.
 
+A timeline is available at the [Windows IT Pro Blog](https://techcommunity.microsoft.com/t5/windows-it-pro-blog/vbscript-deprecation-timelines-and-next-steps/ba-p/4148301).
+
 ## Projects using vbscript.rs
 
 https://github.com/francisdb/vbsfmt
@@ -27,6 +29,7 @@ https://github.com/francisdb/vbsfmt
 * Vbsedit Example vbs files: https://www.vbsedit.com/scripts/default.asp
 * vpx-js vbscript bnf grammar https://github.com/vpdb/vpx-js/blob/master/lib/scripting/grammar/grammar.bnf
 * wine vbscript bison grammar https://gitlab.winehq.org/wine/wine/-/blob/master/dlls/vbscript/parser.y
+* MS VBScript Language Reference https://docs.microsoft.com/en-us/previous-versions/t0aew7h6(v=vs.85)
 
 ## Running the integration tests
 
