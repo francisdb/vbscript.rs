@@ -1,6 +1,10 @@
 use crate::lexer::{Token, TokenKind};
 use crate::parser::ast::Expr::WithScoped;
-use crate::parser::ast::{Argument, ArgumentType, Case, ClassDim, DoLoopCheck, DoLoopCondition, ErrorClause, Expr, FullIdent, Item, MemberAccess, MemberDefinitions, PropertyType, PropertyVisibility, SetRhs, Stmt, Visibility};
+use crate::parser::ast::{
+    Argument, ArgumentType, Case, ClassDim, DoLoopCheck, DoLoopCondition, ErrorClause, Expr,
+    FullIdent, Item, MemberAccess, MemberDefinitions, PropertyType, PropertyVisibility, SetRhs,
+    Stmt, Visibility,
+};
 use crate::parser::{ast, ParseError, Parser};
 use crate::T;
 use std::collections::HashSet;
