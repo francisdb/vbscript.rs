@@ -13,9 +13,9 @@ Check the [examples folder](examples/)
 
 ## Rationale
 
-On October 2023 [Microsoft deprecated VBScript](https://learn.microsoft.com/en-us/windows/whats-new/deprecated-features). However, there are still many legacy systems that use it. This project aims to provide a lexer, parser and later interpreter for VBScript, so that it can be used in Rust projects.
+On October 2023 [Microsoft deprecated VBScript](https://learn.microsoft.com/en-us/windows/whats-new/deprecated-features). A timeline is available at the [Windows IT Pro Blog](https://techcommunity.microsoft.com/t5/windows-it-pro-blog/vbscript-deprecation-timelines-and-next-steps/ba-p/4148301).
 
-A timeline is available at the [Windows IT Pro Blog](https://techcommunity.microsoft.com/t5/windows-it-pro-blog/vbscript-deprecation-timelines-and-next-steps/ba-p/4148301).
+However, there are still many legacy systems that use VBScript. This project aims to provide a lexer, parser and maybe later interpreter for VBScript, so that it can be used in Rust projects.
 
 ## Projects using vbscript.rs
 
@@ -25,11 +25,12 @@ https://github.com/francisdb/vbsfmt
 
 * The [wine](https://www.winehq.org/) project has a similar lexer/parser/interpreter in C, but it's COM based and not very easy to use as a library: https://gitlab.winehq.org/wine/wine/-/tree/master/dlls/vbscript
 
+* MS VBScript Language Reference https://docs.microsoft.com/en-us/previous-versions/t0aew7h6(v=vs.85)
 * Vbsedit VBScript help: https://www.vbsedit.com/html/1c457e66-a6b2-4545-b2dd-33a59d8661e8.asp
 * Vbsedit Example vbs files: https://www.vbsedit.com/scripts/default.asp
-* vpx-js vbscript bnf grammar https://github.com/vpdb/vpx-js/blob/master/lib/scripting/grammar/grammar.bnf
+* vpx-js vbscript bnf grammar and transpiler https://github.com/vpdb/vpx-js/blob/master/lib/scripting/grammar/grammar.bnf
+* Rosetta code VBScript bnf grammar https://rosettacode.org/wiki/BNF_Grammar#VBScript , used by [vbscript_in_js](https://github.com/kastner/vbscript_in_js)
 * wine vbscript bison grammar https://gitlab.winehq.org/wine/wine/-/blob/master/dlls/vbscript/parser.y
-* MS VBScript Language Reference https://docs.microsoft.com/en-us/previous-versions/t0aew7h6(v=vs.85)
 
 ## Running the integration tests
 
@@ -47,7 +48,6 @@ RUST_BACKTRACE=1 cargo test -- --nocapture try_parsing_all_vbs_files
 ```
 
 ## Running the benchmarks
-
 
 To run this benchmark, use the following command:
 
