@@ -42,7 +42,7 @@ impl<'input> LogosLexer<'input> {
     }
 }
 
-impl<'input> Iterator for LogosLexer<'input> {
+impl Iterator for LogosLexer<'_> {
     type Item = Token;
 
     fn next(&mut self) -> Option<Self::Item> {

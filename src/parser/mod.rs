@@ -170,7 +170,7 @@ impl<'input> TokenIter<'input> {
     }
 }
 
-impl<'input> Iterator for TokenIter<'input> {
+impl Iterator for TokenIter<'_> {
     type Item = Token;
 
     fn next(&mut self) -> Option<Self::Item> {

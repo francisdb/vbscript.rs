@@ -8,8 +8,10 @@ readme = "README.md"
 license = "MIT"
 documentation = "https://docs.rs/vbscript"
 
+[features]
+interpreter = []
+
 [dependencies]
-lazy_static = "1.4.0"
 logos = "0.14.0"
 
 [dev-dependencies]

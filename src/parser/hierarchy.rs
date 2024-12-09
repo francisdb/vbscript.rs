@@ -9,7 +9,7 @@ use crate::parser::{ast, ParseError, Parser};
 use crate::T;
 use std::collections::HashSet;
 
-impl<'input, I> Parser<'input, I>
+impl<I> Parser<'_, I>
 where
     I: Iterator<Item = Token>,
 {

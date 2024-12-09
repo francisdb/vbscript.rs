@@ -5,7 +5,7 @@ use crate::parser::ast::{Expr, Lit};
 use crate::parser::{ParseError, Parser};
 use crate::T;
 
-impl<'input, I> Parser<'input, I>
+impl<I> Parser<'_, I>
 where
     I: Iterator<Item = Token>,
 {
