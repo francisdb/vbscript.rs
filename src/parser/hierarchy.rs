@@ -625,7 +625,8 @@ where
             | T![property]
             | T![me]
             | T![stop]
-            | T![step] => Ok(self.text(&ident).to_string()),
+            | T![step]
+            | T![unused] => Ok(self.text(&ident).to_string()),
             _ => Err(ParseError::new(
                 format!(
                     "Expected identifier as {}, but found `{}`",
