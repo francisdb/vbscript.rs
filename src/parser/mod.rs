@@ -1,4 +1,4 @@
-use crate::{lexer::*, T};
+use crate::{T, lexer::*};
 use std::fmt::Debug;
 use std::iter::Peekable;
 
@@ -136,7 +136,7 @@ where
                     ),
                     peek.line,
                     peek.column,
-                ))
+                ));
             }
         };
         Ok(())

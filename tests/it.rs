@@ -5,7 +5,7 @@ use indoc::indoc;
 use pretty_assertions::assert_eq;
 
 use vbscript::parser::Parser;
-use vbscript::{lexer::*, T};
+use vbscript::{T, lexer::*};
 
 /// walks `$tokens` and compares them to the given kinds.
 macro_rules! assert_tokens {
