@@ -1,7 +1,7 @@
 [package]
 name = "vbscript"
 version = "0.2.1"
-edition = "2021"
+edition = "2024"
 description = "Rust VBScript lexer and parser "
 repository = "https://github.com/francisdb/vbscript.rs"
 readme = "README.md"

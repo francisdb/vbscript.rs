@@ -1045,8 +1045,8 @@ fn try_tokenizing_all_vbs_files() {
         // and fail the test
         if let Some(token) = tokens.iter().find(|t| t.kind == T![parse_error]) {
             let idx = tokens.iter().position(|t| t == token).unwrap();
-            let start = if idx > 10 { idx - 10 } else { 0 };
             let end = idx + 1;
+            let start = idx.saturating_sub(10);
             println!("Error in file: {:?}", path);
             for token in &tokens[start..end] {
                 let range: Range<usize> = token.span.into();
@@ -1058,15 +1058,14 @@ fn try_tokenizing_all_vbs_files() {
 }
 
 fn test_scripts() -> impl Iterator<Item = PathBuf> {
-    let paths = glob::glob("./testscripts/**/*.vbs")
+    glob::glob("./testscripts/**/*.vbs")
         .unwrap()
         .filter_map(Result::ok)
         .filter(|p| {
             !EXCLUDED_FILES
                 .iter()
                 .any(|f| p.to_str().unwrap().contains(f))
-        });
-    paths
+        })
 }
 
 /// This test tries to parse all `.vbs` files going one level lower from the root of the project.
