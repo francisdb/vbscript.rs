@@ -1,3 +1,4 @@
+use crate::T;
 use crate::lexer::{Token, TokenKind};
 use crate::parser::ast::Expr::WithScoped;
 use crate::parser::ast::{
@@ -5,8 +6,7 @@ use crate::parser::ast::{
     FullIdent, Item, MemberAccess, MemberDefinitions, PropertyType, PropertyVisibility, SetRhs,
     Stmt, Visibility,
 };
-use crate::parser::{ast, ParseError, Parser};
-use crate::T;
+use crate::parser::{ParseError, Parser, ast};
 use std::collections::HashSet;
 
 impl<I> Parser<'_, I>
@@ -321,13 +321,14 @@ where
             }
             other => {
                 let peek = self.peek_full()?;
-                return Err(
-                    ParseError::new(
-                        format!("Expected `let`, `set` or `get` in class property definition, but found `{}`", other),
-                        peek.line,
-                        peek.column
-                    )
-                );
+                return Err(ParseError::new(
+                    format!(
+                        "Expected `let`, `set` or `get` in class property definition, but found `{}`",
+                        other
+                    ),
+                    peek.line,
+                    peek.column,
+                ));
             }
         };
 
@@ -989,7 +990,7 @@ where
                     format!("Exit not supported for `{}`", other),
                     0,
                     0,
-                ))
+                ));
             }
         };
         Ok(res)
@@ -1013,7 +1014,7 @@ where
                         "Expected integer after `goto`",
                         token.line,
                         token.column,
-                    ))
+                    ));
                 }
             };
             if number != 0 {

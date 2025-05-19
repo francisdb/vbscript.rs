@@ -182,8 +182,8 @@ impl Iterator for LogosLexer<'_> {
 
 #[cfg(test)]
 mod test {
-    use crate::lexer::{Lexer, Token};
     use crate::T;
+    use crate::lexer::{Lexer, Token};
     use indoc::indoc;
     use pretty_assertions::assert_eq;
 

@@ -1,9 +1,9 @@
 // In parser/expressions.rs
 
+use crate::T;
 use crate::lexer::{Token, TokenKind};
 use crate::parser::ast::{Expr, Lit};
 use crate::parser::{ParseError, Parser};
-use crate::T;
 
 impl<I> Parser<'_, I>
 where

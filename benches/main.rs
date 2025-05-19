@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use criterion::{criterion_group, criterion_main, BatchSize, Criterion, Throughput};
+use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_main};
 use indoc::indoc;
 use vbscript::lexer::Lexer;
 use vbscript::parser::Parser;
@@ -74,7 +74,7 @@ fn bench_lexer(c: &mut Criterion, name: &str, input: &str) {
 
     // To measure throughput, we need to tell `criterion`
     // how big our input is.
-    group.throughput(Throughput::Bytes(input.as_bytes().len() as u64));
+    group.throughput(Throughput::Bytes(input.len() as u64));
     group.bench_with_input(name, input, |b, input| {
         b.iter_batched(
             || Lexer::new(input),         // <- Our lexer is made HERE
@@ -92,7 +92,7 @@ fn bench_parser(c: &mut Criterion, name: &str, input: &str) {
 
     // To measure throughput, we need to tell `criterion`
     // how big our input is.
-    group.throughput(Throughput::Bytes(input.as_bytes().len() as u64));
+    group.throughput(Throughput::Bytes(input.len() as u64));
     group.bench_with_input(name, input, |b, input| {
         b.iter_batched(
             || Parser::new(input),      // <- Our lexer is made HERE

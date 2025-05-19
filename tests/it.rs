@@ -5,7 +5,7 @@ use indoc::indoc;
 use pretty_assertions::assert_eq;
 
 use vbscript::parser::Parser;
-use vbscript::{lexer::*, T};
+use vbscript::{T, lexer::*};
 
 /// walks `$tokens` and compares them to the given kinds.
 macro_rules! assert_tokens {
@@ -1045,8 +1045,8 @@ fn try_tokenizing_all_vbs_files() {
         // and fail the test
         if let Some(token) = tokens.iter().find(|t| t.kind == T![parse_error]) {
             let idx = tokens.iter().position(|t| t == token).unwrap();
-            let start = if idx > 10 { idx - 10 } else { 0 };
             let end = idx + 1;
+            let start = idx.saturating_sub(10);
             println!("Error in file: {:?}", path);
             for token in &tokens[start..end] {
                 let range: Range<usize> = token.span.into();
@@ -1058,26 +1058,30 @@ fn try_tokenizing_all_vbs_files() {
 }
 
 fn test_scripts() -> impl Iterator<Item = PathBuf> {
-    let paths = glob::glob("./testscripts/**/*.vbs")
+    glob::glob("./testscripts/**/*.vbs")
         .unwrap()
         .filter_map(Result::ok)
         .filter(|p| {
             !EXCLUDED_FILES
                 .iter()
                 .any(|f| p.to_str().unwrap().contains(f))
-        });
-    paths
+        })
 }
 
 /// This test tries to parse all `.vbs` files going one level lower from the root of the project.
 /// We suggest to make sure you have https://github.com/jsm174/vpx-standalone-scripts cloned
 /// in ./testsctipts
 ///
-/// Run this test with `cargo test --release -- --nocapture --ignored try_parsing_all_vbs_files`
+/// Run this test with `cargo test --release -- --nocapture try_parsing_all_vbs_files`
 #[test]
 fn try_parsing_all_vbs_files() {
     let paths = test_scripts();
     for path in paths {
+        // see https://github.com/sverrewl/vpxtable_scripts/issues/30
+        if path.to_string_lossy().contains("X-Men(ICPjuggla)6-27c.vbs") {
+            println!("Skipping file: !!! {}", path.display());
+            continue;
+        }
         println!("Parsing file: {}", path.display());
         let input = std::fs::read_to_string(&path).unwrap();
         let mut parser = Parser::new(&input);
