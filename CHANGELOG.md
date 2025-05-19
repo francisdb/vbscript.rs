@@ -6,6 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2](https://github.com/francisdb/vbscript.rs/compare/v0.2.1...v0.2.2) - 2025-05-19
+
+### Other
+
+- *(deps)* update criterion requirement from 0.5.1 to 0.6.0 ([#12](https://github.com/francisdb/vbscript.rs/pull/12))
+- *(deps)* rust-2024 ([#13](https://github.com/francisdb/vbscript.rs/pull/13))
+
 ## [0.2.1](https://github.com/francisdb/vbscript.rs/compare/v0.2.0...v0.2.1) - 2024-12-09
 
 ### Fixed
