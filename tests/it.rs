@@ -1072,11 +1072,16 @@ fn test_scripts() -> impl Iterator<Item = PathBuf> {
 /// We suggest to make sure you have https://github.com/jsm174/vpx-standalone-scripts cloned
 /// in ./testsctipts
 ///
-/// Run this test with `cargo test --release -- --nocapture --ignored try_parsing_all_vbs_files`
+/// Run this test with `cargo test --release -- --nocapture try_parsing_all_vbs_files`
 #[test]
 fn try_parsing_all_vbs_files() {
     let paths = test_scripts();
     for path in paths {
+        // see https://github.com/sverrewl/vpxtable_scripts/issues/30
+        if path.to_string_lossy().contains("X-Men(ICPjuggla)6-27c.vbs"){
+            println!("Skipping file: !!! {}", path.display());
+            continue;
+        }
         println!("Parsing file: {}", path.display());
         let input = std::fs::read_to_string(&path).unwrap();
         let mut parser = Parser::new(&input);
