@@ -1078,7 +1078,7 @@ fn try_parsing_all_vbs_files() {
     let paths = test_scripts();
     for path in paths {
         // see https://github.com/sverrewl/vpxtable_scripts/issues/30
-        if path.to_string_lossy().contains("X-Men(ICPjuggla)6-27c.vbs"){
+        if path.to_string_lossy().contains("X-Men(ICPjuggla)6-27c.vbs") {
             println!("Skipping file: !!! {}", path.display());
             continue;
         }
