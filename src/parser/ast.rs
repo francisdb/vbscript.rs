@@ -147,7 +147,7 @@ fn fmt_indices(f: &mut Formatter, array_indices: &Vec<Vec<Option<Expr>>>) -> fmt
         write!(f, "(")?;
         for (i, index) in indices.iter().enumerate() {
             match index {
-                Some(index) => write!(f, "{}", index)?,
+                Some(index) => write!(f, "{index}")?,
                 None => write!(f, "")?,
             }
             if i < indices.len() - 1 {
@@ -196,8 +196,8 @@ impl IdentBase {
 impl Display for IdentBase {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            IdentBase::Partial(part) => write!(f, ".{}", part),
-            IdentBase::Complete(part) => write!(f, "{}", part),
+            IdentBase::Partial(part) => write!(f, ".{part}"),
+            IdentBase::Complete(part) => write!(f, "{part}"),
             IdentBase::Me { array_indices } => {
                 write!(f, "Me")?;
                 fmt_indices(f, array_indices)?;
@@ -572,11 +572,11 @@ pub struct Type {
 impl fmt::Display for Expr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Expr::Literal(lit) => write!(f, "{}", lit),
-            Expr::Ident(ident) => write!(f, "{}", ident),
+            Expr::Literal(lit) => write!(f, "{lit}"),
+            Expr::Ident(ident) => write!(f, "{ident}"),
             Expr::WithScoped => write!(f, "."),
             Expr::IdentFnSubCall(ident) => {
-                write!(f, "{}", ident)
+                write!(f, "{ident}")
             }
             // Expr::FnCall { fn_name, args } => {
             //     write!(f, "{}(", fn_name)?;
@@ -592,17 +592,17 @@ impl fmt::Display for Expr {
             //     }
             //     write!(f, "")
             // }
-            Expr::PrefixOp { op, expr } => write!(f, "({} {})", op, expr),
-            Expr::InfixOp { op, lhs, rhs } => write!(f, "({} {} {})", lhs, op, rhs),
+            Expr::PrefixOp { op, expr } => write!(f, "({op} {expr})"),
+            Expr::InfixOp { op, lhs, rhs } => write!(f, "({lhs} {op} {rhs})"),
             // Expr::PostfixOp { op, expr } =>
             //     write!(f, "({} {})", expr, op),
-            Expr::New(name) => write!(f, "New {}", name),
+            Expr::New(name) => write!(f, "New {name}"),
             Expr::FnApplication { callee, args } => {
-                write!(f, "{}(", callee)?;
+                write!(f, "{callee}(")?;
                 let len = args.len();
                 for (i, arg) in args.iter().enumerate() {
                     if let Some(arg) = arg {
-                        write!(f, "{}", arg)?;
+                        write!(f, "{arg}")?;
                     }
                     if i != len - 1 {
                         write!(f, ", ")?;
@@ -610,7 +610,7 @@ impl fmt::Display for Expr {
                 }
                 write!(f, ")")
             }
-            Expr::MemberExpression { base, property } => write!(f, "{}.{}", base, property),
+            Expr::MemberExpression { base, property } => write!(f, "{base}.{property}"),
         }
     }
 }
@@ -618,10 +618,10 @@ impl fmt::Display for Expr {
 impl fmt::Display for Lit {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Lit::Int(i) => write!(f, "{}", i),
-            Lit::Float(fl) => write!(f, "{}", fl),
+            Lit::Int(i) => write!(f, "{i}"),
+            Lit::Float(fl) => write!(f, "{fl}"),
             Lit::Str(s) => write!(f, r#""{}""#, s.replace('"', "\"\"")),
-            Lit::DateTime(dt) => write!(f, "#{}#", dt),
+            Lit::DateTime(dt) => write!(f, "#{dt}#"),
             Lit::Bool(b) => {
                 if *b {
                     write!(f, "True")

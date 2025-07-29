@@ -1036,7 +1036,7 @@ static EXCLUDED_FILES: &[&str] = &[
 fn try_tokenizing_all_vbs_files() {
     let paths = test_scripts();
     for path in paths {
-        println!("Tokenizing file: {:?}", path);
+        println!("Tokenizing file: {path:?}");
         let input = std::fs::read_to_string(&path).unwrap();
         let mut lexer = Lexer::new(&input);
         let tokens = lexer.tokenize();
@@ -1047,12 +1047,12 @@ fn try_tokenizing_all_vbs_files() {
             let idx = tokens.iter().position(|t| t == token).unwrap();
             let end = idx + 1;
             let start = idx.saturating_sub(10);
-            println!("Error in file: {:?}", path);
+            println!("Error in file: {path:?}");
             for token in &tokens[start..end] {
                 let range: Range<usize> = token.span.into();
                 println!("  {:?} {:?}", token.kind, &input[range]);
             }
-            panic!("Error in file: {:?}", path);
+            panic!("Error in file: {path:?}");
         }
     }
 }

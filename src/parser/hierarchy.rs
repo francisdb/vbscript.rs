@@ -171,7 +171,7 @@ where
             for (name, _) in &member.properties {
                 let lower = name.to_ascii_lowercase();
                 if member_names.contains(&lower) {
-                    panic!("Name redefined '{}'", name);
+                    panic!("Name redefined '{name}'");
                 }
                 member_names.insert(lower);
             }
@@ -180,7 +180,7 @@ where
             for (name, _) in dim {
                 let lower = name.to_ascii_lowercase();
                 if member_names.contains(&lower) {
-                    panic!("Name redefined '{}'", name);
+                    panic!("Name redefined '{name}'");
                 }
                 member_names.insert(lower);
             }
@@ -189,14 +189,14 @@ where
             if let Stmt::Sub { name, .. } = method {
                 let lower = name.to_ascii_lowercase();
                 if member_names.contains(&lower) {
-                    panic!("Name redefined '{}'", name);
+                    panic!("Name redefined '{name}'");
                 }
                 member_names.insert(lower);
             }
             if let Stmt::Function { name, .. } = method {
                 let lower = name.to_ascii_lowercase();
                 if member_names.contains(&lower) {
-                    panic!("Name redefined '{}'", name);
+                    panic!("Name redefined '{name}'");
                 }
                 member_names.insert(lower);
             }
@@ -323,8 +323,7 @@ where
                 let peek = self.peek_full()?;
                 return Err(ParseError::new(
                     format!(
-                        "Expected `let`, `set` or `get` in class property definition, but found `{}`",
-                        other
+                        "Expected `let`, `set` or `get` in class property definition, but found `{other}`"
                     ),
                     peek.line,
                     peek.column,
@@ -770,7 +769,7 @@ where
             unexpected => {
                 let full = self.peek_full()?;
                 return Err(ParseError::new(
-                    format!("Unexpected token: {}", unexpected),
+                    format!("Unexpected token: {unexpected}"),
                     full.line,
                     full.column,
                 ));
@@ -987,7 +986,7 @@ where
             }
             other => {
                 return Err(ParseError::new(
-                    format!("Exit not supported for `{}`", other),
+                    format!("Exit not supported for `{other}`"),
                     0,
                     0,
                 ));
@@ -1363,7 +1362,7 @@ where
             kind => {
                 let token = self.peek_full()?;
                 return Err(ParseError::new(
-                    format!("Unknown start of identifier: {kind}", kind = kind),
+                    format!("Unknown start of identifier: {kind}"),
                     token.line,
                     token.column,
                 ));
