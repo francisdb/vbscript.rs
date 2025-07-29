@@ -92,10 +92,7 @@ where
     pub(crate) fn consume(&mut self, expected: TokenKind) -> Result<Token, ParseError> {
         let token = self.next().ok_or_else(|| {
             ParseError::new(
-                format!(
-                    "Expected to consume `{}`, but there was no next token",
-                    expected
-                ),
+                format!("Expected to consume `{expected}`, but there was no next token"),
                 0,
                 0,
             )
@@ -130,10 +127,7 @@ where
             }
             other => {
                 return Err(ParseError::new(
-                    format!(
-                        "Unexpected token Expected newline or colon, but found {}",
-                        other
-                    ),
+                    format!("Unexpected token Expected newline or colon, but found {other}"),
                     peek.line,
                     peek.column,
                 ));

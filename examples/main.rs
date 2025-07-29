@@ -20,7 +20,7 @@ fn parse_and_print_ast_tree(input: &str) -> Result<(), ParseError> {
     let mut parser = vbscript::parser::Parser::new(input);
     let ast = parser.file()?;
     // print the tree
-    println!("{:#?}", ast);
+    println!("{ast:#?}");
     Ok(())
 }
 
