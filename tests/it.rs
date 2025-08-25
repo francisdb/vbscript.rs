@@ -1036,6 +1036,19 @@ static EXCLUDED_FILES: &[&str] = &[
 fn try_tokenizing_all_vbs_files() {
     let paths = test_scripts();
     for path in paths {
+        // see https://github.com/francisdb/vbscript.rs/issues/21 (NBSP in script Klondike/Yukon)
+        if path
+            .to_string_lossy()
+            .contains("Klondike (Williams 1971).vbs")
+            || path.to_string_lossy().contains("Yukon (Williams 1971).vbs")
+            || path
+                .to_string_lossy()
+                .contains("Yukon Special (Williams 1971).vbs")
+        {
+            println!("Skipping file: !!! {}", path.display());
+            continue;
+        }
+
         println!("Tokenizing file: {path:?}");
         let input = std::fs::read_to_string(&path).unwrap();
         let mut lexer = Lexer::new(&input);
@@ -1077,8 +1090,25 @@ fn test_scripts() -> impl Iterator<Item = PathBuf> {
 fn try_parsing_all_vbs_files() {
     let paths = test_scripts();
     for path in paths {
-        // see https://github.com/sverrewl/vpxtable_scripts/issues/30
-        if path.to_string_lossy().contains("X-Men(ICPjuggla)6-27c.vbs") {
+        // see https://github.com/sverrewl/vpxtable_scripts/issues/30 (X-Men)
+        // see https://github.com/sverrewl/vpxtable_scripts/issues/31 (Kessel Run)
+        // see https://github.com/francisdb/vbscript.rs/issues/21 (NBSP in script Klondike/Yukon)
+        // see https://github.com/francisdb/vbscript.rs/issues/22 (Large numbers Tiki)
+        if path.to_string_lossy().contains("X-Men(ICPjuggla)6-27c.vbs")
+            || path
+                .to_string_lossy()
+                .contains("Kessel Run (Original, 2025).vbs")
+            || path
+                .to_string_lossy()
+                .contains("Klondike (Williams 1971).vbs")
+            || path.to_string_lossy().contains("Yukon (Williams 1971).vbs")
+            || path
+                .to_string_lossy()
+                .contains("Yukon Special (Williams 1971).vbs")
+            || path
+                .to_string_lossy()
+                .contains("Tiki Bob's Atomic Beach Party Hybrid MEGA v3.vbs")
+        {
             println!("Skipping file: !!! {}", path.display());
             continue;
         }

@@ -794,11 +794,11 @@ where
         // we need to re-evaluate it as part of the sub arguments
         let outer: Expr = *ident.0;
 
-        if let Expr::FnApplication { callee, args } = outer {
-            if args.len() == 1 {
-                part_of_expression = Some(args[0].clone().unwrap());
-                patched_ident = FullIdent::new(*callee)
-            }
+        if let Expr::FnApplication { callee, args } = outer
+            && args.len() == 1
+        {
+            part_of_expression = Some(args[0].clone().unwrap());
+            patched_ident = FullIdent::new(*callee)
         }
 
         (patched_ident, part_of_expression)
@@ -813,15 +813,16 @@ where
         ident: &FullIdent,
     ) -> Result<(), ParseError> {
         let inner = &ident.0;
-        if let Expr::FnApplication { args, .. } = &**inner {
-            if args.is_empty() && self.at(T![,]) {
-                let full = self.peek_full()?;
-                return Err(ParseError::new(
-                    "compilation error: Expected end of statement",
-                    full.line,
-                    full.column,
-                ));
-            }
+        if let Expr::FnApplication { args, .. } = &**inner
+            && args.is_empty()
+            && self.at(T![,])
+        {
+            let full = self.peek_full()?;
+            return Err(ParseError::new(
+                "compilation error: Expected end of statement",
+                full.line,
+                full.column,
+            ));
         }
         Ok(())
     }
@@ -835,15 +836,15 @@ where
         ident: &FullIdent,
     ) -> Result<(), ParseError> {
         let inner = &ident.0;
-        if let Expr::FnApplication { args, .. } = &**inner {
-            if args.len() > 1 {
-                let full = self.peek_full()?;
-                return Err(ParseError::new(
-                    "compilation error: Cannot use parentheses when calling a Sub",
-                    full.line,
-                    full.column,
-                ));
-            }
+        if let Expr::FnApplication { args, .. } = &**inner
+            && args.len() > 1
+        {
+            let full = self.peek_full()?;
+            return Err(ParseError::new(
+                "compilation error: Cannot use parentheses when calling a Sub",
+                full.line,
+                full.column,
+            ));
         };
         Ok(())
     }
