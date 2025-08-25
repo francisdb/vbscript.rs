@@ -186,11 +186,9 @@ where
                 // We are using parse here which is for parsing rust literals, we might have to
                 // implement our own parser for VBScript literals
                 let literal = match lit {
-                    T![integer_literal] => {
-                        Lit::Int(literal_text.parse().unwrap_or_else(|_| {
-                            panic!("invalid integer literal: `{literal_text}`")
-                        }))
-                    }
+                    T![integer_literal] => Lit::Int(literal_text.parse().unwrap_or_else(|e| {
+                        panic!("invalid integer literal: `{literal_text} ({e})`")
+                    })),
                     T![hex_integer_literal] => {
                         // trim the &H prefix
                         // trim possible & suffix (for long hex literals)
@@ -199,8 +197,8 @@ where
                         } else {
                             &literal_text[2..]
                         };
-                        Lit::Int(isize::from_str_radix(trimmed, 16).unwrap_or_else(|_| {
-                            panic!("invalid hex integer literal: `{literal_text}`")
+                        Lit::Int(isize::from_str_radix(trimmed, 16).unwrap_or_else(|e| {
+                            panic!("invalid hex integer literal: `{literal_text}` ({e})")
                         }))
                     }
                     T![octal_integer_literal] => {
