@@ -1,4 +1,21 @@
 # Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+## [0.2.3](https://github.com/francisdb/vbscript.rs/compare/v0.2.2...v0.2.3) - 2025-08-25
+
+### Other
+
+- *(deps)* bump actions/checkout from 4 to 5 ([#19](https://github.com/francisdb/vbscript.rs/pull/19))
+- clippy fixes ([#20](https://github.com/francisdb/vbscript.rs/pull/20))
+- *(deps)* update criterion requirement from 0.6.0 to 0.7.0 ([#16](https://github.com/francisdb/vbscript.rs/pull/16))
+- new clippy rules ([#17](https://github.com/francisdb/vbscript.rs/pull/17))
+# Changelog
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
