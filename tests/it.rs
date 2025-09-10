@@ -1106,6 +1106,9 @@ fn try_parsing_all_vbs_files() {
                 .contains("Yukon Special (Williams 1971).vbs")
             || path
                 .to_string_lossy()
+                .contains("Tiki Bob's Atomic Beach Party 2.0 VR_FlexDMD.vbs")
+            || path
+                .to_string_lossy()
                 .contains("Tiki Bob's Atomic Beach Party Hybrid MEGA v3.vbs")
         {
             println!("Skipping file: !!! {}", path.display());
