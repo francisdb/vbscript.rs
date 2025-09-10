@@ -1091,7 +1091,7 @@ fn try_parsing_all_vbs_files() {
     let paths = test_scripts();
     for path in paths {
         // see https://github.com/sverrewl/vpxtable_scripts/issues/30 (X-Men)
-        // see https://github.com/sverrewl/vpxtable_scripts/issues/31 (Kessel Run)
+        // see https://github.com/sverrewl/vpxtable_scripts/issues/31 (Kessel Run / Tiki)
         // see https://github.com/francisdb/vbscript.rs/issues/21 (NBSP in script Klondike/Yukon)
         if path.to_string_lossy().contains("X-Men(ICPjuggla)6-27c.vbs")
             || path
@@ -1104,6 +1104,9 @@ fn try_parsing_all_vbs_files() {
             || path
                 .to_string_lossy()
                 .contains("Yukon Special (Williams 1971).vbs")
+            || path
+                .to_string_lossy()
+                .contains("Tiki Bob's Atomic Beach Party Hybrid MEGA v3.vbs")
         {
             println!("Skipping file: !!! {}", path.display());
             continue;
