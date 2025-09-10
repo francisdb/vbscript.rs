@@ -1349,6 +1349,21 @@ Const a = 1			' some info
     }
 
     #[test]
+    fn parse_assign_very_big_number() {
+        let input = "x = 1111111111111111111111111111111111111111111111111111111111111";
+        let stmt = parse_stmt(input, true);
+        assert_eq!(
+            stmt,
+            Stmt::Assignment {
+                full_ident: FullIdent::ident("x"),
+                value: Box::new(Expr::int_str(
+                    "1111111111111111111111111111111111111111111111111111111111111"
+                ))
+            }
+        );
+    }
+
+    #[test]
     fn parse_const() {
         let input = "Const x = 42";
         let stmt = parse_stmt(input, true);
