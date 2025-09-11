@@ -285,7 +285,11 @@ impl Expr {
     }
 
     pub fn int(i: isize) -> Self {
-        Expr::Literal(Lit::Int(i))
+        Expr::Literal(Lit::Int(i.to_string()))
+    }
+
+    pub fn int_str(i: impl Into<String>) -> Self {
+        Expr::Literal(Lit::Int(i.into()))
     }
 
     pub fn bool(b: bool) -> Self {
@@ -318,7 +322,9 @@ impl Expr {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Lit {
-    Int(isize),
+    /// Integral literal, can be negative, can be very large and at runtime seen as Double with loss of precision
+    Int(String),
+    /// Floating point literal, can be negative, at runtime seen as Float or Double
     Float(f64),
     Str(String),
     Bool(bool),
@@ -642,6 +648,6 @@ impl Lit {
     }
 
     pub fn int(i: isize) -> Self {
-        Lit::Int(i)
+        Lit::Int(i.to_string())
     }
 }

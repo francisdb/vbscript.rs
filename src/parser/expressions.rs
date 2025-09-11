@@ -136,7 +136,7 @@ where
             sign @ T![+] | sign @ T![-] => {
                 self.consume(sign)?;
                 self.parse_literal().map(|lit| match lit {
-                    Lit::Int(i) => Ok(Lit::Int(-i)),
+                    Lit::Int(i) => Ok(Lit::Int(format!("-{}", i))),
                     Lit::Float(f) => Ok(Lit::Float(-f)),
                     _ => {
                         let peek = self.peek_full()?;
@@ -197,12 +197,12 @@ where
                         } else {
                             &literal_text[2..]
                         };
-                        Lit::Int(isize::from_str_radix(trimmed, 16).unwrap_or_else(|e| {
+                        Lit::int(isize::from_str_radix(trimmed, 16).unwrap_or_else(|e| {
                             panic!("invalid hex integer literal: `{literal_text}` ({e})")
                         }))
                     }
                     T![octal_integer_literal] => {
-                        Lit::Int(isize::from_str_radix(&literal_text[2..], 8).unwrap_or_else(
+                        Lit::int(isize::from_str_radix(&literal_text[2..], 8).unwrap_or_else(
                             |_| panic!("invalid octal integer literal: `{literal_text}`"),
                         ))
                     }
