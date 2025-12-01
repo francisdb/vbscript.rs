@@ -18,7 +18,7 @@ logos = "0.15.0"
 pretty_assertions = "1.4.0"
 indoc = "2.0.5"
 glob = "0.3.1"
-criterion = "0.7.0"
+criterion = "0.8.0"
 
 [[bench]]
 name = "main"
