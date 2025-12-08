@@ -101,157 +101,157 @@ pub(super) enum LogosToken {
     Ident((usize, usize)),
 
     // Keywords
-    #[token("and", word_callback, ignore(ascii_case))]
+    #[token("and", word_callback, ignore(case))]
     KwAnd((usize, usize)),
-    #[token("byref", word_callback, ignore(ascii_case))]
+    #[token("byref", word_callback, ignore(case))]
     KwByRef((usize, usize)),
-    #[token("byval", word_callback, ignore(ascii_case))]
+    #[token("byval", word_callback, ignore(case))]
     KwByVal((usize, usize)),
-    #[token("call", word_callback, ignore(ascii_case))]
+    #[token("call", word_callback, ignore(case))]
     KwCall((usize, usize)),
-    #[token("case", word_callback, ignore(ascii_case))]
+    #[token("case", word_callback, ignore(case))]
     KwCase((usize, usize)),
-    #[token("class", word_callback, ignore(ascii_case))]
+    #[token("class", word_callback, ignore(case))]
     KwClass((usize, usize)),
-    #[token("const", word_callback, ignore(ascii_case))]
+    #[token("const", word_callback, ignore(case))]
     KwConst((usize, usize)),
-    #[token("currency", word_callback, ignore(ascii_case))]
+    #[token("currency", word_callback, ignore(case))]
     KwCurrency((usize, usize)),
-    #[token("default", word_callback, ignore(ascii_case))]
+    #[token("default", word_callback, ignore(case))]
     KwDefault((usize, usize)),
-    // #[token("debug", ignore(ascii_case))]
+    // #[token("debug", ignore(case))]
     // KwDebug,
-    #[token("dim", word_callback, ignore(ascii_case))]
+    #[token("dim", word_callback, ignore(case))]
     KwDim((usize, usize)),
-    #[token("do", word_callback, ignore(ascii_case))]
+    #[token("do", word_callback, ignore(case))]
     KwDo((usize, usize)),
-    #[token("each", word_callback, ignore(ascii_case))]
+    #[token("each", word_callback, ignore(case))]
     KwEach((usize, usize)),
-    #[token("else", word_callback, ignore(ascii_case))]
+    #[token("else", word_callback, ignore(case))]
     KwElse((usize, usize)),
-    #[token("elseif", word_callback, ignore(ascii_case))]
+    #[token("elseif", word_callback, ignore(case))]
     KwElseIf((usize, usize)),
-    #[token("empty", word_callback, ignore(ascii_case))]
+    #[token("empty", word_callback, ignore(case))]
     KwEmpty((usize, usize)),
-    #[token("end", word_callback, ignore(ascii_case))]
+    #[token("end", word_callback, ignore(case))]
     KwEnd((usize, usize)),
-    #[token("eqv", word_callback, ignore(ascii_case))]
+    #[token("eqv", word_callback, ignore(case))]
     KwEqv((usize, usize)),
-    #[token("error", word_callback, ignore(ascii_case))]
+    #[token("error", word_callback, ignore(case))]
     KwError((usize, usize)),
-    #[token("event", word_callback, ignore(ascii_case))]
+    #[token("event", word_callback, ignore(case))]
     KwEvent((usize, usize)),
-    #[token("exit", word_callback, ignore(ascii_case))]
+    #[token("exit", word_callback, ignore(case))]
     KwExit((usize, usize)),
-    #[token("false", word_callback, ignore(ascii_case))]
+    #[token("false", word_callback, ignore(case))]
     KwFalse((usize, usize)),
-    #[token("for", word_callback, ignore(ascii_case))]
+    #[token("for", word_callback, ignore(case))]
     KwFor((usize, usize)),
-    #[token("function", word_callback, ignore(ascii_case))]
+    #[token("function", word_callback, ignore(case))]
     KwFunction((usize, usize)),
-    #[token("get", word_callback, ignore(ascii_case))]
+    #[token("get", word_callback, ignore(case))]
     KwGet((usize, usize)),
-    #[token("goto", word_callback, ignore(ascii_case))]
+    #[token("goto", word_callback, ignore(case))]
     KwGoTo((usize, usize)),
-    #[token("if", word_callback, ignore(ascii_case))]
+    #[token("if", word_callback, ignore(case))]
     KwIf((usize, usize)),
-    #[token("imp", word_callback, ignore(ascii_case))]
+    #[token("imp", word_callback, ignore(case))]
     KwImp((usize, usize)),
-    #[token("implements", word_callback, ignore(ascii_case))]
+    #[token("implements", word_callback, ignore(case))]
     KwImplements((usize, usize)),
-    #[token("in", word_callback, ignore(ascii_case))]
+    #[token("in", word_callback, ignore(case))]
     KwIn((usize, usize)),
-    #[token("is", word_callback, ignore(ascii_case))]
+    #[token("is", word_callback, ignore(case))]
     KwIs((usize, usize)),
-    #[token("let", word_callback, ignore(ascii_case))]
+    #[token("let", word_callback, ignore(case))]
     KwLet((usize, usize)),
-    #[token("like", word_callback, ignore(ascii_case))]
+    #[token("like", word_callback, ignore(case))]
     KwLike((usize, usize)),
-    #[token("loop", word_callback, ignore(ascii_case))]
+    #[token("loop", word_callback, ignore(case))]
     KwLoop((usize, usize)),
-    #[token("lset", word_callback, ignore(ascii_case))]
+    #[token("lset", word_callback, ignore(case))]
     KwLSet((usize, usize)),
-    #[token("me", word_callback, ignore(ascii_case))]
+    #[token("me", word_callback, ignore(case))]
     KwMe((usize, usize)),
-    #[token("mod", word_callback, ignore(ascii_case))]
+    #[token("mod", word_callback, ignore(case))]
     KwMod((usize, usize)),
-    #[token("new", word_callback, ignore(ascii_case))]
+    #[token("new", word_callback, ignore(case))]
     KwNew((usize, usize)),
-    #[token("next", word_callback, ignore(ascii_case))]
+    #[token("next", word_callback, ignore(case))]
     KwNext((usize, usize)),
-    #[token("not", word_callback, ignore(ascii_case))]
+    #[token("not", word_callback, ignore(case))]
     KwNot((usize, usize)),
-    #[token("nothing", word_callback, ignore(ascii_case))]
+    #[token("nothing", word_callback, ignore(case))]
     KwNothing((usize, usize)),
-    #[token("null", word_callback, ignore(ascii_case))]
+    #[token("null", word_callback, ignore(case))]
     KwNull((usize, usize)),
-    #[token("on", word_callback, ignore(ascii_case))]
+    #[token("on", word_callback, ignore(case))]
     KwOn((usize, usize)),
-    #[token("option", word_callback, ignore(ascii_case))]
+    #[token("option", word_callback, ignore(case))]
     KwOption((usize, usize)),
-    #[token("optional", word_callback, ignore(ascii_case))]
+    #[token("optional", word_callback, ignore(case))]
     KwOptional((usize, usize)),
-    #[token("or", word_callback, ignore(ascii_case))]
+    #[token("or", word_callback, ignore(case))]
     KwOr((usize, usize)),
-    #[token("paramarray", word_callback, ignore(ascii_case))]
+    #[token("paramarray", word_callback, ignore(case))]
     KwParamArray((usize, usize)),
-    #[token("preserve", word_callback, ignore(ascii_case))]
+    #[token("preserve", word_callback, ignore(case))]
     KwPreserve((usize, usize)),
-    #[token("private", word_callback, ignore(ascii_case))]
+    #[token("private", word_callback, ignore(case))]
     KwPrivate((usize, usize)),
-    #[token("property", word_callback, ignore(ascii_case))]
+    #[token("property", word_callback, ignore(case))]
     KwProperty((usize, usize)),
-    #[token("public", word_callback, ignore(ascii_case))]
+    #[token("public", word_callback, ignore(case))]
     KwPublic((usize, usize)),
-    #[token("raiseevent", word_callback, ignore(ascii_case))]
+    #[token("raiseevent", word_callback, ignore(case))]
     KwRaiseEvent((usize, usize)),
-    #[token("redim", word_callback, ignore(ascii_case))]
+    #[token("redim", word_callback, ignore(case))]
     KwReDim((usize, usize)),
-    #[token("resume", word_callback, ignore(ascii_case))]
+    #[token("resume", word_callback, ignore(case))]
     KwResume((usize, usize)),
-    #[token("rset", word_callback, ignore(ascii_case))]
+    #[token("rset", word_callback, ignore(case))]
     KwRSet((usize, usize)),
-    #[token("select", word_callback, ignore(ascii_case))]
+    #[token("select", word_callback, ignore(case))]
     KwSelect((usize, usize)),
-    #[token("set", word_callback, ignore(ascii_case))]
+    #[token("set", word_callback, ignore(case))]
     KwSet((usize, usize)),
-    #[token("shared", word_callback, ignore(ascii_case))]
+    #[token("shared", word_callback, ignore(case))]
     KwShared((usize, usize)),
-    #[token("single", word_callback, ignore(ascii_case))]
+    #[token("single", word_callback, ignore(case))]
     KwSingle((usize, usize)),
-    #[token("static", word_callback, ignore(ascii_case))]
+    #[token("static", word_callback, ignore(case))]
     KwStatic((usize, usize)),
     // In the listing I found 'step' was missing as keyword so I wonder if this
     // should be handled in a different way.
-    #[token("step", word_callback, ignore(ascii_case))]
+    #[token("step", word_callback, ignore(case))]
     KwStep((usize, usize)),
-    #[token("sub", word_callback, ignore(ascii_case))]
+    #[token("sub", word_callback, ignore(case))]
     KwSub((usize, usize)),
-    #[token("then", word_callback, ignore(ascii_case))]
+    #[token("then", word_callback, ignore(case))]
     KwThen((usize, usize)),
-    #[token("to", word_callback, ignore(ascii_case))]
+    #[token("to", word_callback, ignore(case))]
     KwTo((usize, usize)),
-    #[token("true", word_callback, ignore(ascii_case))]
+    #[token("true", word_callback, ignore(case))]
     KwTrue((usize, usize)),
-    #[token("typeof", word_callback, ignore(ascii_case))]
+    #[token("typeof", word_callback, ignore(case))]
     KwTypeOf((usize, usize)),
-    #[token("until", word_callback, ignore(ascii_case))]
+    #[token("until", word_callback, ignore(case))]
     KwUntil((usize, usize)),
-    #[token("variant", word_callback, ignore(ascii_case))]
+    #[token("variant", word_callback, ignore(case))]
     KwVariant((usize, usize)),
-    #[token("wend", word_callback, ignore(ascii_case))]
+    #[token("wend", word_callback, ignore(case))]
     KwWend((usize, usize)),
-    #[token("while", word_callback, ignore(ascii_case))]
+    #[token("while", word_callback, ignore(case))]
     KwWhile((usize, usize)),
-    #[token("with", word_callback, ignore(ascii_case))]
+    #[token("with", word_callback, ignore(case))]
     KwWith((usize, usize)),
-    #[token("xor", word_callback, ignore(ascii_case))]
+    #[token("xor", word_callback, ignore(case))]
     KwXor((usize, usize)),
-    #[token("stop", word_callback, ignore(ascii_case))]
+    #[token("stop", word_callback, ignore(case))]
     KwStop((usize, usize)),
     // We can't merge this one with comment because x.rem is a valid member access
     // and'd we ant validate that rem is not preceded by a dot unless we enable lookbehind
-    #[token("rem", word_callback, ignore(ascii_case))]
+    #[token("rem", word_callback, ignore(case))]
     KwRem((usize, usize)),
     /// Represents reserved keywords but that are not actually in use
     /// https://isvbscriptdead.com/reserved-keywords/
@@ -274,7 +274,7 @@ pub(super) enum LogosToken {
     LineContinuation((usize, usize)),
 
     // comments using '
-    #[regex(r"(?i)'([^\r\n]*)")]
+    #[regex(r"(?i)'[^\r\n]*", allow_greedy = true)]
     Comment,
 }
 
