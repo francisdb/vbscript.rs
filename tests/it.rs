@@ -1052,9 +1052,6 @@ static EXCLUDED_FILES: &[&str] = &[
     "sverrewl-vpxtable-scripts/Bally Roller Derby 2.0.vbs",
     // Malformed: a stray backtick is used as a comment marker (rejected by wine vbscript).
     "vpx-standalone-scripts/KISS (Stern 2015)/KISS (Stern 2015).vbs",
-    // TODO valid VBScript, temporarily excluded until the lexer supports them:
-    // octal literals (`&O17`), wide hex (`&h000000000`) and date literals with day 13-31.
-    "wine-vbscript/dlls/vbscript/tests/lang.vbs",
 ];
 
 /// It tries to tokenize all `.vbs` files going one level lower from the root of the project.
