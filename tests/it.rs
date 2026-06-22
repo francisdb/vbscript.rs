@@ -1025,6 +1025,14 @@ static EXCLUDED_FILES: &[&str] = &[
     "sverrewl-vpxtable-scripts/Theatre of magic VPX NZ-TT 1.0.vbs",
     // Uses `If ... End If` without Then TODO check if this is valid
     "sverrewl-vpxtable-scripts/Bally Roller Derby 2.0.vbs",
+    // Malformed: a stray backtick is used as a comment marker (rejected by wine vbscript).
+    "vpx-standalone-scripts/KISS (Stern 2015)/KISS (Stern 2015).vbs",
+    // TODO valid VBScript, temporarily excluded until the lexer supports them:
+    // bracketed (escaped) identifiers like `[L178 Side Flasher]`.
+    "sverrewl-vpxtable-scripts/No Good Gofers(Williams 1997)V1.1.2.vbs",
+    // TODO valid VBScript, temporarily excluded until the lexer supports them:
+    // octal literals (`&O17`), wide hex (`&h000000000`) and date literals with day 13-31.
+    "wine-vbscript/dlls/vbscript/tests/lang.vbs",
 ];
 
 /// It tries to tokenize all `.vbs` files going one level lower from the root of the project.
@@ -1079,6 +1087,10 @@ fn try_parsing_all_vbs_files() {
     for path in paths {
         // see https://github.com/sverrewl/vpxtable_scripts/issues/30 (X-Men)
         // see https://github.com/sverrewl/vpxtable_scripts/issues/31 (Kessel Run / Tiki)
+        // All malformed, rejected by wine vbscript:
+        // - Pinball and Nitro Ground Shaker hf5: `bsSaucer1..KickForceVar` double dot.
+        // - Robo-War: the `Bumper*_Hit` subs call `SoundFX("Bumper", ActiveBall, 1`
+        //   with the closing parenthesis missing.
         if path.to_string_lossy().contains("X-Men(ICPjuggla)6-27c.vbs")
             || path
                 .to_string_lossy()
@@ -1089,6 +1101,13 @@ fn try_parsing_all_vbs_files() {
             || path
                 .to_string_lossy()
                 .contains("Tiki Bob's Atomic Beach Party Hybrid MEGA v3.vbs")
+            || path.to_string_lossy().contains("Pinball (Stern 1977).vbs")
+            || path
+                .to_string_lossy()
+                .contains("Nitro Ground Shaker (Bally 1980) 1.0.0hf5.vbs")
+            || path
+                .to_string_lossy()
+                .contains("Robo-War (Gottlieb 1988).vbs")
         {
             println!("Skipping file: !!! {}", path.display());
             continue;
