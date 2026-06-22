@@ -202,9 +202,14 @@ where
                         }))
                     }
                     T![octal_integer_literal] => {
-                        Lit::int(isize::from_str_radix(&literal_text[2..], 8).unwrap_or_else(
-                            |_| panic!("invalid octal integer literal: `{literal_text}`"),
-                        ))
+                        // trim the `&` prefix, an optional `O`, and a possible `&` Long suffix
+                        let digits = literal_text
+                            .trim_start_matches('&')
+                            .trim_start_matches(['O', 'o'])
+                            .trim_end_matches('&');
+                        Lit::int(isize::from_str_radix(digits, 8).unwrap_or_else(|_| {
+                            panic!("invalid octal integer literal: `{literal_text}`")
+                        }))
                     }
                     T![real_literal] => Lit::Float(literal_text.parse().unwrap_or_else(|_| {
                         panic!("invalid floating point literal: `{literal_text}`")
@@ -434,6 +439,47 @@ mod test {
                 lhs: Box::new(Expr::ident("col")),
                 rhs: Box::new(Expr::int(0xFF)),
             }
+        );
+    }
+
+    #[test]
+    fn test_expression_with_octal_literal() {
+        // `&O17` is octal 17 == 15, the trailing `&` Long suffix must be ignored
+        let input = "col And &O17&";
+        let expr = parse_expression(input);
+        assert_eq!(
+            expr,
+            Expr::InfixOp {
+                op: T![and],
+                lhs: Box::new(Expr::ident("col")),
+                rhs: Box::new(Expr::int(0o17)),
+            }
+        );
+    }
+
+    #[test]
+    fn test_expression_with_bare_octal_literal() {
+        // The `O` is optional: Windows cscript evaluates `&10000000` to octal 2097152
+        let input = "col And &10000000";
+        let expr = parse_expression(input);
+        assert_eq!(
+            expr,
+            Expr::InfixOp {
+                op: T![and],
+                lhs: Box::new(Expr::ident("col")),
+                rhs: Box::new(Expr::int(0o10000000)),
+            }
+        );
+    }
+
+    #[test]
+    fn test_bare_octal_rejects_non_octal_digit() {
+        // `&19` is a syntax error on Windows cscript: 9 is not an octal digit, so it
+        // lexes as `&1` followed by a stray `9` and must fail to parse.
+        let mut parser = Parser::new("x = &19");
+        assert!(
+            parser.file().is_err(),
+            "`&19` should not parse: 9 is not an octal digit"
         );
     }
 
