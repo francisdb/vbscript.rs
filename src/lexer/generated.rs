@@ -98,6 +98,9 @@ pub(super) enum LogosToken {
     DateTime((usize, usize)),
 
     #[regex(r#"([A-Za-z])([A-Za-z]|_|\d)*"#, word_callback)]
+    // Escaped/bracketed identifier, e.g. `[L178 Side Flasher]`, which may contain
+    // spaces and other characters that are not valid in a bare identifier.
+    #[regex(r#"\[[^\]]*\]"#, word_callback)]
     Ident((usize, usize)),
 
     // Keywords
