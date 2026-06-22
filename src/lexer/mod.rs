@@ -379,8 +379,8 @@ mod test {
 
     #[test]
     fn octal_integer_literal() {
-        // 0 prefix not mandatory
-        let input = "&010+&10";
+        // octal literals: the `O` after `&` is optional and a `&` Long suffix is allowed
+        let input = "&010+&o17&";
         let lexer = Lexer::new(input);
         let tokens: Vec<_> = lexer.map(|t| t.kind).collect();
         assert_eq!(

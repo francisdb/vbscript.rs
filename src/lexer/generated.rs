@@ -82,7 +82,11 @@ pub(super) enum LogosToken {
     // A & suffix means that the number is of the type Long (32 bit integer).
     #[regex(r#"&[Hh][0-9A-Fa-f]+&?"#, word_callback, priority = 6)]
     HexInt((usize, usize)),
-    #[regex(r#"&[0-7]+"#, word_callback, priority = 6)]
+    // Octal literals: an optional `O` after the `&`, octal digits, and an optional
+    // `&` Long suffix, e.g. `&O17`, `&17` or `&O17&`. The `O` really is optional in
+    // VBScript: `cscript` on Windows evaluates `&10000000` to octal 2097152 (note that
+    // the wine vbscript engine wrongly rejects the bare `&<digits>` form).
+    #[regex(r#"&[Oo]?[0-7]+&?"#, word_callback, priority = 6)]
     OctalInt((usize, usize)),
     #[regex(
         r#"((\d+\.\d*)|(\.\d+))([Ee](\+|-)?\d+)?|\d([Ee](\+|-)?\d+)"#,
