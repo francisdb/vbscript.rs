@@ -776,13 +776,16 @@ mod test {
     #[test]
     fn tokenize_date_literals() {
         // Fails on windows with: runtime error: Invalid or unqualified reference
-        let input = "#1/1/2000# #12/31/2000# #1899-12-31# #112-31# # 1/1/2011 #";
+        // `#1/15/2024#` has a day (15) whose second digit is not 0-2
+        let input = "#1/1/2000# #12/31/2000# #1/15/2024# #1899-12-31# #112-31# # 1/1/2011 #";
         let mut lexer = Lexer::new(input);
         let tokens: Vec<_> = lexer.tokenize();
         let token_kinds = tokens.iter().map(|t| t.kind).collect::<Vec<_>>();
         assert_eq!(
             token_kinds,
             [
+                T![date_time_literal],
+                T![ws],
                 T![date_time_literal],
                 T![ws],
                 T![date_time_literal],

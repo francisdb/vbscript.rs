@@ -95,8 +95,10 @@ pub(super) enum LogosToken {
     )]
     Float((usize, usize)),
     // TODO what is that last date format, test on windows!
+    // The day in the `#M/D/YYYY#` form is 1-2 digits (1-31); it must not be
+    // restricted to `\d[0-2]?`, which rejects days like 13-19 and 23-29.
     #[regex(
-        r#"# *\d\d?/\d[0-2]?/\d{4} *#|#\d{4}-\d[0-2]?-\d\d?#|#\d{3}-\d\d?#"#,
+        r#"# *\d\d?/\d\d?/\d{4} *#|#\d{4}-\d[0-2]?-\d\d?#|#\d{3}-\d\d?#"#,
         word_callback
     )]
     DateTime((usize, usize)),
