@@ -6,6 +6,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.4](https://github.com/francisdb/vbscript.rs/compare/v0.2.3...v0.2.4) - 2026-06-22
+
+### Added
+
+- *(lexer)* support bracketed (escaped) identifiers ([#32](https://github.com/francisdb/vbscript.rs/pull/32))
+
+### Fixed
+
+- *(lexer)* accept day 13-31 in #M/D/YYYY# date literals ([#34](https://github.com/francisdb/vbscript.rs/pull/34))
+- *(lexer)* accept the optional O in octal literals ([#33](https://github.com/francisdb/vbscript.rs/pull/33))
+
+### Other
+
+- *(deps)* bump actions/checkout from 6 to 7 ([#30](https://github.com/francisdb/vbscript.rs/pull/30))
+- pin vbs test corpus and exclude/skip new failing scripts ([#31](https://github.com/francisdb/vbscript.rs/pull/31))
+- *(deps)* bump actions/cache from 4 to 5 ([#28](https://github.com/francisdb/vbscript.rs/pull/28))
+
 ## [0.2.3](https://github.com/francisdb/vbscript.rs/compare/v0.2.2...v0.2.3) - 2025-12-08
 
 ### Fixed
