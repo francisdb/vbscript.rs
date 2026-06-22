@@ -311,6 +311,31 @@ fn test_lexer_string_literal() {
 }
 
 #[test]
+fn test_lexer_bracketed_identifier() {
+    // Bracketed (escaped) identifiers may contain spaces and other characters that
+    // are not valid in a bare identifier, e.g. `[L178 Side Flasher]`.
+    let input = "[L178 Side Flasher].visible = 1";
+    let mut lexer = Lexer::new(input);
+    let tokens: Vec<_> = lexer
+        .tokenize()
+        .into_iter()
+        .filter(|t| t.kind != T![ws])
+        .collect();
+    assert_tokens!(
+        tokens,
+        [
+            T![ident],
+            T![_.],
+            T![ident],
+            T![=],
+            T![integer_literal],
+            T![EOF],
+        ]
+    );
+    assert_eq!("[L178 Side Flasher]", &input[tokens[0].span]);
+}
+
+#[test]
 fn test_lexer_array_declaration() {
     let input = "Dim a(1, 2, 3)";
     let mut lexer = Lexer::new(input);
@@ -1027,9 +1052,6 @@ static EXCLUDED_FILES: &[&str] = &[
     "sverrewl-vpxtable-scripts/Bally Roller Derby 2.0.vbs",
     // Malformed: a stray backtick is used as a comment marker (rejected by wine vbscript).
     "vpx-standalone-scripts/KISS (Stern 2015)/KISS (Stern 2015).vbs",
-    // TODO valid VBScript, temporarily excluded until the lexer supports them:
-    // bracketed (escaped) identifiers like `[L178 Side Flasher]`.
-    "sverrewl-vpxtable-scripts/No Good Gofers(Williams 1997)V1.1.2.vbs",
     // TODO valid VBScript, temporarily excluded until the lexer supports them:
     // octal literals (`&O17`), wide hex (`&h000000000`) and date literals with day 13-31.
     "wine-vbscript/dlls/vbscript/tests/lang.vbs",
