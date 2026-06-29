@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.5](https://github.com/francisdb/vbscript.rs/compare/v0.2.4...v0.2.5) - 2026-06-29
+
+### Other
+
+- *(deps)* bump actions/cache from 5 to 6 ([#35](https://github.com/francisdb/vbscript.rs/pull/35))
+
 ## [0.2.4](https://github.com/francisdb/vbscript.rs/compare/v0.2.3...v0.2.4) - 2026-06-22
 
 ### Added
