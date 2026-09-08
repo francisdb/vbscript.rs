@@ -6,7 +6,7 @@ use crate::parser::ast::{
     FullIdent, Item, MemberAccess, MemberDefinitions, PropertyType, PropertyVisibility, SetRhs,
     Stmt, Visibility,
 };
-use crate::parser::{ParseError, Parser, ast};
+use crate::parser::{ParseError, Parser};
 use std::collections::HashSet;
 
 impl<I> Parser<'_, I>
@@ -1333,8 +1333,6 @@ where
             | T![error]
             | T![default]
             | T![set] => {
-                //let full_ident = self.ident_deep();
-                //Expr::IdentFnSubCall(full_ident)
                 let ident = self.identifier("identifier base")?;
                 Expr::ident(ident)
             }
@@ -1370,71 +1368,6 @@ where
             }
         };
         Ok(res)
-    }
-
-    // /// Parse a deep identifier, which can contain multiple array and property accesses.
-    // /// example input: `foo(x + 1).bar.baz(2,3).name`
-    // pub(crate) fn ident_deep(&mut self) -> FullIdent {
-    //     let base = if self.at(T![.]) {
-    //         self.consume(T![.]);
-    //         IdentBase::Partial(self.ident_part())
-    //     } else if self.at(T![_.]) {
-    //         // Eg an expression at the start of a line will not match the T![.]
-    //         // because we use the inverse logic in that T![.] actually requires whitespace to be
-    //         // matched.
-    //         self.consume(T![_.]);
-    //         IdentBase::Partial(self.ident_part())
-    //     } else if self.at(T![me]) {
-    //         self.consume(T![me]);
-    //         // TODO can we have array indices on me?
-    //         IdentBase::Me {
-    //             array_indices: vec![],
-    //         }
-    //     } else {
-    //         IdentBase::Complete(self.ident_part())
-    //     };
-    //
-    //     let mut property_accesses = vec![];
-    //     // TODO in windows you can't have a space between the property and the dot
-    //     while self.at(T![_.]) {
-    //         self.consume(T![_.]);
-    //         let part = self.ident_part();
-    //         property_accesses.push(part);
-    //     }
-    //     FullIdent {
-    //         base,
-    //         property_accesses,
-    //     }
-    // }
-
-    pub fn type_(&mut self) -> Result<ast::Type, ParseError> {
-        let ident = self
-            .next()
-            .expect("Tried to parse type, but there were no more tokens");
-        assert_eq!(
-            ident.kind,
-            T![ident],
-            "Expected identifier at start of type, but found `{}`",
-            ident.kind
-        );
-        let name = self.text(&ident).to_string();
-
-        let mut generics = Vec::new();
-
-        if self.at(T![<]) {
-            self.consume(T![<])?;
-            while !self.at(T![>]) {
-                // Generic parameters are also types
-                let generic = self.type_()?;
-                generics.push(generic);
-                if self.at(T![,]) {
-                    self.consume(T![,])?;
-                }
-            }
-            self.consume(T![>])?;
-        }
-
-        Ok(ast::Type { name, generics })
     }
 }
 
