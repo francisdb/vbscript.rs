@@ -1,6 +1,6 @@
 use crate::lexer::TokenKind;
 use std::fmt;
-use std::fmt::{Display, Formatter};
+use std::fmt::Display;
 
 /*
 
@@ -106,107 +106,6 @@ End Property
 
 */
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct IdentPart {
-    pub name: String,
-    // there might be multiple array indices/function calls
-    // eg a(1,2)(2)
-    pub array_indices: Vec<Vec<Option<Expr>>>,
-}
-
-impl IdentPart {
-    pub fn ident(name: impl Into<String>) -> Self {
-        IdentPart {
-            name: name.into(),
-            array_indices: Vec::new(),
-        }
-    }
-}
-
-impl Display for IdentPart {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.name)?;
-        fmt_indices(f, &self.array_indices)?;
-        Ok(())
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum IdentBase {
-    /// When used in a `with` statement, eg `.property`
-    Partial(IdentPart),
-    /// When used as a standalone identifier, eg `variable`
-    Complete(IdentPart),
-    Me {
-        array_indices: Vec<Vec<Option<Expr>>>,
-    },
-}
-
-fn fmt_indices(f: &mut Formatter, array_indices: &Vec<Vec<Option<Expr>>>) -> fmt::Result {
-    for indices in array_indices {
-        write!(f, "(")?;
-        for (i, index) in indices.iter().enumerate() {
-            match index {
-                Some(index) => write!(f, "{index}")?,
-                None => write!(f, "")?,
-            }
-            if i < indices.len() - 1 {
-                write!(f, ", ")?;
-            }
-        }
-        write!(f, ")")?;
-    }
-    Ok(())
-}
-
-impl IdentBase {
-    pub fn ident(name: impl Into<String>) -> Self {
-        IdentBase::Complete(IdentPart::ident(name))
-    }
-
-    pub fn partial(name: impl Into<String>) -> Self {
-        IdentBase::Partial(IdentPart::ident(name))
-    }
-
-    pub fn me() -> Self {
-        IdentBase::Me {
-            array_indices: Vec::new(),
-        }
-    }
-
-    pub fn array_indices(&self) -> &Vec<Vec<Option<Expr>>> {
-        match &self {
-            IdentBase::Complete(part) => &part.array_indices,
-            IdentBase::Partial(part) => &part.array_indices,
-            IdentBase::Me { array_indices } => array_indices,
-        }
-    }
-
-    pub fn set_array_indices(&mut self, array_indices: Vec<Vec<Option<Expr>>>) {
-        match self {
-            IdentBase::Complete(part) => part.array_indices = array_indices,
-            IdentBase::Partial(part) => part.array_indices = array_indices,
-            IdentBase::Me {
-                array_indices: me_array_indices,
-            } => *me_array_indices = array_indices,
-        }
-    }
-}
-
-impl Display for IdentBase {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            IdentBase::Partial(part) => write!(f, ".{part}"),
-            IdentBase::Complete(part) => write!(f, "{part}"),
-            IdentBase::Me { array_indices } => {
-                write!(f, "Me")?;
-                fmt_indices(f, array_indices)?;
-                Ok(())
-            }
-        }
-    }
-}
-
 /// An identifier with optional property accesses
 /// eg `a.b.c`, `a.b(1).c`, `a.b(1)(2).c` or `a.b(1,2).c(3)`
 ///
@@ -234,22 +133,6 @@ impl Display for FullIdent {
 pub enum Expr {
     Literal(Lit),
     Ident(String),
-    /// An identifier, identifier with array access, sub or function call
-    /// This grammar is ambiguous, so will need to be resolved at runtime
-    /// TODO we can probably make a different type for
-    ///   * Ident without array access or SubCall without args
-    ///   * Ident with array access or FnCall with args or
-    ///   * FnCall without args
-    ///   * SubCall with args
-    IdentFnSubCall(FullIdent),
-    // FnCall {
-    //     fn_name: FullIdent,
-    //     args: Vec<Expr>,
-    // },
-    // SubCall {
-    //     fn_name: String,
-    //     args: Vec<Expr>,
-    // },
     PrefixOp {
         op: TokenKind,
         expr: Box<Expr>,
@@ -276,10 +159,6 @@ pub enum Expr {
 }
 
 impl Expr {
-    pub fn ident2(name: impl Into<String>) -> Self {
-        Expr::IdentFnSubCall(FullIdent::ident(name))
-    }
-
     pub fn ident(name: impl Into<String>) -> Self {
         Expr::Ident(name.into())
     }
@@ -569,35 +448,12 @@ impl Stmt {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Type {
-    pub name: String,
-    pub generics: Vec<Type>,
-}
-
 impl fmt::Display for Expr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Expr::Literal(lit) => write!(f, "{lit}"),
             Expr::Ident(ident) => write!(f, "{ident}"),
             Expr::WithScoped => write!(f, "."),
-            Expr::IdentFnSubCall(ident) => {
-                write!(f, "{ident}")
-            }
-            // Expr::FnCall { fn_name, args } => {
-            //     write!(f, "{}(", fn_name)?;
-            //     for arg in args {
-            //         write!(f, "{},", arg)?;
-            //     }
-            //     write!(f, ")")
-            // }
-            // Expr::SubCall { fn_name, args } => {
-            //     write!(f, "{}", fn_name)?;
-            //     for arg in args {
-            //         write!(f, "{},", arg)?;
-            //     }
-            //     write!(f, "")
-            // }
             Expr::PrefixOp { op, expr } => write!(f, "({op} {expr})"),
             Expr::InfixOp { op, lhs, rhs } => write!(f, "({lhs} {op} {rhs})"),
             // Expr::PostfixOp { op, expr } =>
