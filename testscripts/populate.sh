@@ -11,7 +11,7 @@ repos=(
   "vpx-standalone-scripts https://github.com/jsm174/vpx-standalone-scripts.git 15d112648a1b94b9f59eb8b3c335d57283653c50"
   "vpinball/scripts https://github.com/vpinball/vpinball.git f40b291411cf3d31f575db8953190322c6b9ef50"
   "sverrewl-vpxtable-scripts https://github.com/sverrewl/vpxtable_scripts.git 9e4a4a519405e14015ed009f85f34a2ecef3da38"
-  "wine-vbscript/dlls/vbscript/tests https://github.com/wine-mirror/wine.git ff95854f8cc48de0301c5e03096ad9bd7c990227"
+  "wine-vbscript/dlls/vbscript/tests https://github.com/wine-mirror/wine.git 9ce1651515d93d9760e2438a53bf2c117238bc2b"
 )
 
 for repo in "${repos[@]}"; do
