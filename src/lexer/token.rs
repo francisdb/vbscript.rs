@@ -567,7 +567,8 @@ impl fmt::Display for TokenKind {
             match self {
                 // Single characters
                 T![.] => ".",
-                T![_.] => "_.",
+                // member access dot, shown as a plain dot in error messages
+                T![_.] => ".",
                 T![+] => "+",
                 T![-] => "-",
                 T![*] => "*",
