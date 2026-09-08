@@ -2126,6 +2126,69 @@ Const a = 1			' some info
     }
 
     #[test]
+    fn test_parse_with_dot_after_then_and_else() {
+        // https://github.com/francisdb/vbscript.rs/issues/37
+        // no space is required between `Then`/`Else` and a with-statement dot
+        let input = indoc! {r#"
+            With Controller
+                If usePUP = False Then.PuPHide = 1 Else.PuPHide = 2
+                if Mute = 1 then.Games(cGameName).Settings.Value("sound") = 0
+            End With
+        "#};
+        let items = parse_file(input);
+        #[rustfmt::skip]
+        assert_eq!(
+            items,
+            vec![Item::Statement(Stmt::With {
+                object: FullIdent::ident("Controller"),
+                body: vec![
+                    Stmt::IfStmt {
+                        condition: Box::new(InfixOp {
+                            op: T![=],
+                            lhs: Box::new(Expr::ident("usePUP")),
+                            rhs: Box::new(Expr::bool(false)),
+                        }),
+                        body: vec![Stmt::Assignment {
+                            full_ident: FullIdent::new(Expr::member(WithScoped, "PuPHide")),
+                            value: Box::new(Expr::int(1)),
+                        }],
+                        elseif_statements: vec![],
+                        else_stmt: Some(vec![Stmt::Assignment {
+                            full_ident: FullIdent::new(Expr::member(WithScoped, "PuPHide")),
+                            value: Box::new(Expr::int(2)),
+                        }]),
+                    },
+                    Stmt::IfStmt {
+                        condition: Box::new(InfixOp {
+                            op: T![=],
+                            lhs: Box::new(Expr::ident("Mute")),
+                            rhs: Box::new(Expr::int(1)),
+                        }),
+                        body: vec![Stmt::Assignment {
+                            full_ident: FullIdent::new(Expr::fn_application(
+                                Expr::member(
+                                    Expr::member(
+                                        Expr::fn_application(
+                                            Expr::member(WithScoped, "Games"),
+                                            vec![Expr::ident("cGameName")],
+                                        ),
+                                        "Settings",
+                                    ),
+                                    "Value",
+                                ),
+                                vec![Expr::str("sound")],
+                            )),
+                            value: Box::new(Expr::int(0)),
+                        }],
+                        elseif_statements: vec![],
+                        else_stmt: None,
+                    },
+                ],
+            })]
+        );
+    }
+
+    #[test]
     fn test_parse_with() {
         let input = indoc! {r#"
             With foo.obj

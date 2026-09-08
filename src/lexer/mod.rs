@@ -135,9 +135,19 @@ impl Iterator for LogosLexer<'_> {
                     // translate [non-whitepace, .] to [non-whitepace, _.]
                     // without lookahead/back on the lexer we can't do this kind of check
                     // TODO would it not be better to do a positive check here checking for valid cases?
+                    // A dot directly after `Then` or `Else` (`If x Then.prop = 1`) is a
+                    // with-statement dot, not a member access on the keyword.
                     if !matches!(
                         self.prev_token.kind,
-                        T![nl] | T![ws] | T![:] | T!['('] | T![-] | T![,] | T![&]
+                        T![nl]
+                            | T![ws]
+                            | T![:]
+                            | T!['(']
+                            | T![-]
+                            | T![,]
+                            | T![&]
+                            | T![then]
+                            | T![else]
                     ) && matches!(current_kind, T![.])
                     {
                         let replacement_token = Token {
@@ -696,6 +706,39 @@ mod test {
         let tokens: Vec<_> = lexer.tokenize();
         let token_kinds = tokens.iter().map(|t| t.kind).collect::<Vec<_>>();
         assert_eq!(token_kinds, [T![ident], T![_.], T![ident], T![EOF],]);
+        let reconstructed = reconstruct(&input, tokens);
+        assert_eq!(reconstructed, input);
+    }
+
+    #[test]
+    fn tokenize_with_dot_after_then_and_else() {
+        // a dot directly after `Then` or `Else` is a with-statement dot
+        let input = "If a Then.b = 1 Else.c = 2";
+        let mut lexer = Lexer::new(input);
+        let tokens: Vec<_> = lexer.tokenize();
+        let token_kinds = tokens
+            .iter()
+            .filter(|t| t.kind != T![ws])
+            .map(|t| t.kind)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            token_kinds,
+            [
+                T![if],
+                T![ident],
+                T![then],
+                T![.],
+                T![ident],
+                T![=],
+                T![integer_literal],
+                T![else],
+                T![.],
+                T![ident],
+                T![=],
+                T![integer_literal],
+                T![EOF],
+            ]
+        );
         let reconstructed = reconstruct(&input, tokens);
         assert_eq!(reconstructed, input);
     }
