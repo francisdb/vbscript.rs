@@ -53,7 +53,10 @@ where
                         item
                     }
                     T![const] => self.item_const(visibility)?,
-                    T![ident] => self.item_variable(visibility)?,
+                    // the keywords that can be used as a name, see `identifier()`
+                    T![ident] | T![default] | T![error] | T![property] | T![step] => {
+                        self.item_variable(visibility)?
+                    }
                     _ => {
                         let peek = self.peek_full()?;
                         return Err(ParseError::new(
@@ -99,8 +102,7 @@ where
     fn item_variable(&mut self, visibility: Visibility) -> Result<ItemKind, ParseError> {
         let mut vars = Vec::new();
         while !self.at(T![nl]) && !self.at(T![EOF]) {
-            let ident = self.consume(T![ident])?;
-            let name = self.text(&ident).to_string();
+            let name = self.identifier("variable name")?;
             let bounds = self.const_bounds()?;
             vars.push(VarDecl { name, bounds });
             if self.at(T![,]) {
@@ -262,8 +264,7 @@ where
         self.consume(T![dim])?;
         let mut vars = Vec::new();
         while !self.at(T![nl]) && !self.at(T![EOF]) {
-            let ident = self.consume(T![ident])?;
-            let name = self.text(&ident).to_string();
+            let name = self.identifier("variable name")?;
             let bounds = self.const_bounds()?;
             vars.push(VarDecl { name, bounds });
             if self.at(T![,]) {
@@ -390,24 +391,7 @@ where
     fn statement_sub(&mut self, visibility: Visibility) -> Result<StmtKind, ParseError> {
         self.consume(T![sub])?;
 
-        let ident = match self.next() {
-            Some(ident) => ident,
-            None => {
-                return Err(self
-                    .end_of_input_error("Tried to parse sub name, but there were no more tokens"));
-            }
-        };
-        if ident.kind != T![ident] {
-            return Err(ParseError::new(
-                format!(
-                    "Expected identifier as sub name, but found `{}`",
-                    ident.kind
-                ),
-                ident.line,
-                ident.column,
-            ));
-        }
-        let name = self.text(&ident).to_string();
+        let name = self.identifier("sub name")?;
         let parameters = self.optional_declaration_parameter_list("Sub")?;
         self.consume_optional_line_delimiter()?;
         let body = self.block(true, &[T![end]])?;
@@ -426,26 +410,7 @@ where
     fn statement_function(&mut self, visibility: Visibility) -> Result<StmtKind, ParseError> {
         self.consume(T![function])?;
 
-        let ident = match self.next() {
-            Some(ident) => ident,
-            None => {
-                return Err(self.end_of_input_error(
-                    "Tried to parse function name, but there were no more tokens",
-                ));
-            }
-        };
-
-        if ident.kind != T![ident] {
-            return Err(ParseError::new(
-                format!(
-                    "Expected identifier as function name, but found `{}`",
-                    ident.kind
-                ),
-                ident.line,
-                ident.column,
-            ));
-        }
-        let name = self.text(&ident).to_string();
+        let name = self.identifier("function name")?;
 
         let parameters = self.optional_declaration_parameter_list("Function")?;
 
@@ -954,14 +919,12 @@ where
             preserve = true;
         }
         let mut var_bounds = Vec::new();
-        let first_var = self.consume(T![ident])?;
-        let var_name = self.text(&first_var).to_string();
+        let var_name = self.identifier("variable name")?;
         let bounds = self.parenthesized_arguments()?;
         var_bounds.push((var_name, bounds));
         while self.at(T![,]) {
             self.consume(T![,])?;
-            let ident = self.consume(T![ident])?;
-            let name = self.text(&ident).to_string();
+            let name = self.identifier("variable name")?;
             let bounds = self.parenthesized_arguments()?;
             var_bounds.push((name, bounds));
         }
@@ -978,8 +941,7 @@ where
         // multiple constants can be defined in one line
         let mut constants = Vec::new();
         while !self.at(T![nl]) && !self.at(T![EOF]) {
-            let ident = self.consume(T![ident])?;
-            let name = self.text(&ident).to_string();
+            let name = self.identifier("variable name")?;
             self.consume(T![=])?;
             let literal = self.parse_const_literal()?;
             constants.push((name, literal));
@@ -1321,8 +1283,7 @@ where
                 } else {
                     ArgumentType::ByVal
                 };
-                let ident = self.consume(T![ident])?;
-                let arg_name = self.text(&ident).to_string();
+                let arg_name = self.identifier("argument name")?;
                 property_arguments.push((arg_name, argument_type));
                 if self.at(T![,]) {
                     self.consume(T![,])?;
