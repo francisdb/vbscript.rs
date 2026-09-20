@@ -1519,6 +1519,39 @@ Const a = 1			' some info
         );
     }
 
+    /// `cscript` on Windows accepts these keywords wherever a name is declared.
+    #[test]
+    fn test_keywords_as_declared_names() {
+        for word in ["default", "error", "property", "step"] {
+            let input = format!(
+                indoc! {"
+                    Public {w}
+                    Sub {w}()
+                        Const {w} = 1
+                        ReDim {w}(2), other(3)
+                        ReDim Preserve {w}(2)
+                    End Sub
+                    Public Function {w}(a)
+                    End Function
+                    Class K
+                        Dim {w}, other
+                        Sub Bar({w})
+                        End Sub
+                        Public Property Let Foo({w})
+                        End Property
+                    End Class
+                    Class L
+                        Sub {w}()
+                        End Sub
+                    End Class
+                "},
+                w = word
+            );
+            let result = Parser::new(&input).file();
+            assert!(result.is_ok(), "{word}: {result:?}");
+        }
+    }
+
     #[test]
     fn test_with_new_object() {
         let input = indoc! {"
