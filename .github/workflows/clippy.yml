@@ -1,9 +1,10 @@
 on: push
 name: Clippy check
 
-# Make sure CI fails on all warnings, including Clippy lints
+# Make sure CI fails on all warnings, including Clippy lints and rustdoc warnings
 env:
   RUSTFLAGS: "-Dwarnings"
+  RUSTDOCFLAGS: "-Dwarnings"
 
 jobs:
   clippy_check:
@@ -23,3 +24,5 @@ jobs:
         run: cargo clippy --color always --all-targets --all-features
       - name: Run fmt check
         run: cargo fmt --all --check -- --color=always
+      - name: Build docs
+        run: cargo doc --color always --no-deps --all-features
