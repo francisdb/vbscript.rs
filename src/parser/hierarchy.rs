@@ -876,7 +876,6 @@ where
         mut first_expression_part: Option<Expr>,
     ) -> Result<Vec<Option<Expr>>, ParseError> {
         let mut args = Vec::new();
-        // TODO first_expression_part might be ignored here!
         // TODO we should be smarter here instead of having all these end conditions
         while !self.at(T![:])
             && !self.at(T![nl])
@@ -900,6 +899,10 @@ where
             } else {
                 break;
             }
+        }
+        // the statement ends right after the first part: `If a Then Foo (1) Else Bar`
+        if let Some(arg) = first_expression_part {
+            args.push(Some(arg));
         }
         Ok(args)
     }

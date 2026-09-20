@@ -1165,6 +1165,36 @@ Const a = 1			' some info
     }
 
     #[test]
+    fn test_sub_call_with_parenthesized_argument_before_else_or_end() {
+        let call = Stmt::SubCall {
+            fn_name: FullIdent::ident("Foo"),
+            args: vec![Some(Expr::ident("a"))],
+        };
+        let other = Stmt::SubCall {
+            fn_name: FullIdent::ident("Bar"),
+            args: vec![],
+        };
+        assert_eq!(
+            parse_file("If x Then Foo (a) Else Bar"),
+            vec![Item::Statement(Stmt::IfStmt {
+                condition: Box::new(Expr::ident("x")),
+                body: vec![call.clone()],
+                elseif_statements: vec![],
+                else_stmt: Some(vec![other]),
+            })]
+        );
+        assert_eq!(
+            parse_file("If x Then Foo (a) End If"),
+            vec![Item::Statement(Stmt::IfStmt {
+                condition: Box::new(Expr::ident("x")),
+                body: vec![call],
+                elseif_statements: vec![],
+                else_stmt: None,
+            })]
+        );
+    }
+
+    #[test]
     fn test_single_line_if() {
         let input = r#"If Err Then MsgBox "Oh noes""#;
         let stmt = parse_stmt(input, true);
