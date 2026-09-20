@@ -420,13 +420,13 @@ impl Operator for TokenKind {
 /// suffix anything up to `&HFFFF` is a 16 bit Integer, so `&HFFFF` is -1 while `&HFFFF&` is
 /// 65535. Everything else is a 32 bit Long, so `&HFFFFFFFF` is -1. Validated with `cscript`
 /// on Windows, which reports a syntax error for more than 32 bits.
-fn radix_literal_value(digits: &str, radix: u32, long: bool) -> Option<isize> {
+fn radix_literal_value(digits: &str, radix: u32, long: bool) -> Option<i32> {
     let bits = u32::from_str_radix(digits, radix).ok()?;
     let value = match u16::try_from(bits) {
         Ok(bits) if !long => i32::from(bits as i16),
         _ => bits as i32,
     };
-    Some(value as isize)
+    Some(value)
 }
 
 #[cfg(test)]
