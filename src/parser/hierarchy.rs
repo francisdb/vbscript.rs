@@ -111,7 +111,7 @@ where
     }
 
     fn item_class(&mut self) -> Result<Item, ParseError> {
-        self.consume(T![class])?;
+        let class_token = self.consume(T![class])?;
         let name = self.identifier("class name")?;
         self.consume_line_delimiter()?;
         let mut members = Vec::new();
@@ -167,11 +167,18 @@ where
         self.consume(T![class])?;
         self.consume_line_delimiter()?;
         let mut member_names = HashSet::new();
+        let name_redefined = |name: &str| {
+            ParseError::new(
+                format!("Name redefined '{name}'"),
+                class_token.line,
+                class_token.column,
+            )
+        };
         for member in &members {
             for (name, _) in &member.properties {
                 let lower = name.to_ascii_lowercase();
                 if member_names.contains(&lower) {
-                    panic!("Name redefined '{name}'");
+                    return Err(name_redefined(name));
                 }
                 member_names.insert(lower);
             }
@@ -180,7 +187,7 @@ where
             for (name, _) in dim {
                 let lower = name.to_ascii_lowercase();
                 if member_names.contains(&lower) {
-                    panic!("Name redefined '{name}'");
+                    return Err(name_redefined(name));
                 }
                 member_names.insert(lower);
             }
@@ -189,14 +196,14 @@ where
             if let Stmt::Sub { name, .. } = method {
                 let lower = name.to_ascii_lowercase();
                 if member_names.contains(&lower) {
-                    panic!("Name redefined '{name}'");
+                    return Err(name_redefined(name));
                 }
                 member_names.insert(lower);
             }
             if let Stmt::Function { name, .. } = method {
                 let lower = name.to_ascii_lowercase();
                 if member_names.contains(&lower) {
-                    panic!("Name redefined '{name}'");
+                    return Err(name_redefined(name));
                 }
                 member_names.insert(lower);
             }
@@ -214,10 +221,14 @@ where
         // properties
         if visibility == Visibility::Default {
             let peek = self.peek_full()?;
-            panic!(
-                "Expected visibility for class member at line {}, column {} but found '{}'",
-                peek.line, peek.column, peek.kind
-            )
+            return Err(ParseError::new(
+                format!(
+                    "Expected visibility for class member but found '{}'",
+                    peek.kind
+                ),
+                peek.line,
+                peek.column,
+            ));
         };
         // like a dim we can have multiple properties in one line of which some can be arrays
         let mut properties = Vec::new();
@@ -355,15 +366,12 @@ where
                 return Err(ParseError::new("Expected identifier after `option`", 0, 0));
             }
         };
-        match explicit.kind {
-            T![ident] => {
-                assert_eq!(
-                    self.text(&explicit).to_ascii_lowercase(),
-                    "explicit",
-                    "Expected `explicit` after `option`"
-                );
-            }
-            _ => panic!("Expected `explicit` after `option`"),
+        if explicit.kind != T![ident] || !self.text(&explicit).eq_ignore_ascii_case("explicit") {
+            return Err(ParseError::new(
+                "Expected `explicit` after `option`",
+                explicit.line,
+                explicit.column,
+            ));
         }
         self.consume_line_delimiter()?;
         Ok(Item::OptionExplicit)
@@ -455,22 +463,26 @@ where
         let mut bounds = None;
         if self.at(T!['(']) {
             self.consume(T!['('])?;
-            bounds = Some(vec![]);
+            let mut dims = vec![];
             while !self.at(T![')']) {
                 let dim = self.consume(T![integer_literal])?;
                 let dim: usize = match self.text(&dim).parse() {
                     Ok(dim) => dim,
-                    Err(_) => panic!(
-                        "Expected integer literal as bound at line {}, row {}",
-                        dim.line, dim.column
-                    ),
+                    Err(_) => {
+                        return Err(ParseError::new(
+                            "Expected integer literal as bound",
+                            dim.line,
+                            dim.column,
+                        ));
+                    }
                 };
-                bounds.as_mut().unwrap().push(dim);
+                dims.push(dim);
                 if self.at(T![,]) {
                     self.consume(T![,])?;
                 }
             }
             self.consume(T![')'])?;
+            bounds = Some(dims);
         }
         Ok(bounds)
     }
@@ -666,6 +678,13 @@ where
     }
 
     pub fn statement(&mut self, consume_delimiter: bool) -> Result<Stmt, ParseError> {
+        self.enter_nested()?;
+        let result = self.statement_inner(consume_delimiter);
+        self.leave_nested();
+        result
+    }
+
+    fn statement_inner(&mut self, consume_delimiter: bool) -> Result<Stmt, ParseError> {
         let stmt = match self.peek() {
             T![dim] => self.statement_dim(),
             T![redim] => self.statement_redim(),
@@ -795,9 +814,9 @@ where
         let outer: Expr = *ident.0;
 
         if let Expr::FnApplication { callee, args } = outer
-            && args.len() == 1
+            && let [Some(arg)] = args.as_slice()
         {
-            part_of_expression = Some(args[0].clone().unwrap());
+            part_of_expression = Some(arg.clone());
             patched_ident = FullIdent::new(*callee)
         }
 
@@ -1026,7 +1045,12 @@ where
             }
             ErrorClause::Goto0
         } else {
-            panic!("Expected `resume next` or `goto 0` after `on error`")
+            let peek = self.peek_full()?;
+            return Err(ParseError::new(
+                "Expected `resume next` or `goto 0` after `on error`",
+                peek.line,
+                peek.column,
+            ));
         };
         Ok(Stmt::OnError { error_clause })
     }
@@ -1081,7 +1105,9 @@ where
 
         if self.at(T![each]) {
             self.consume(T![each])?;
-            let element = self.next().unwrap();
+            let element = self
+                .next()
+                .ok_or_else(|| ParseError::new("Expected loop variable after `for each`", 0, 0))?;
             let element_name = self.text(&element).to_string();
             self.consume(T![in])?;
             let group = Box::new(self.expression()?);
@@ -1097,7 +1123,9 @@ where
                 body,
             })
         } else {
-            let counter = self.next().unwrap();
+            let counter = self
+                .next()
+                .ok_or_else(|| ParseError::new("Expected loop counter after `for`", 0, 0))?;
             let counter_name = self.text(&counter).to_string();
             self.consume(T![=])?;
             let start = self.expression()?;
@@ -1317,7 +1345,7 @@ where
     }
 
     fn ident_deep_lhs(&mut self) -> Result<Expr, ParseError> {
-        if let Some(literal) = self.parse_literal() {
+        if let Some(literal) = self.literal()? {
             return Ok(Expr::Literal(literal));
         }
 

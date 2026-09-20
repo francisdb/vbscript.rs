@@ -29,6 +29,17 @@ where
         binding_power: u8,
         first_expression_part: Option<Expr>,
     ) -> Result<Expr, ParseError> {
+        self.enter_nested()?;
+        let result = self.parse_expression_inner(binding_power, first_expression_part);
+        self.leave_nested();
+        result
+    }
+
+    fn parse_expression_inner(
+        &mut self,
+        binding_power: u8,
+        first_expression_part: Option<Expr>,
+    ) -> Result<Expr, ParseError> {
         let mut lhs = match first_expression_part {
             Some(expr) => expr,
             None => self.parse_expression_lhs()?,
@@ -135,7 +146,7 @@ where
         let lit = match self.peek() {
             sign @ T![+] | sign @ T![-] => {
                 self.consume(sign)?;
-                self.parse_literal().map(|lit| match lit {
+                self.literal()?.map(|lit| match lit {
                     Lit::Int(i) => Ok(Lit::Int(format!("-{}", i))),
                     Lit::Float(f) => Ok(Lit::Float(-f)),
                     _ => {
@@ -148,7 +159,7 @@ where
                     }
                 })
             }
-            _ => self.parse_literal().map(Ok),
+            _ => self.literal()?.map(Ok),
         };
         match lit {
             Some(lit) => Ok(lit?),
@@ -163,8 +174,14 @@ where
         }
     }
 
+    /// Parse a literal if there is one next, `None` if there is none or if it is invalid.
     pub fn parse_literal(&mut self) -> Option<Lit> {
-        match self.peek() {
+        self.literal().ok().flatten()
+    }
+
+    /// Parse a literal if there is one next, fails if it is not a valid one.
+    pub(crate) fn literal(&mut self) -> Result<Option<Lit>, ParseError> {
+        let literal = match self.peek() {
             lit @ T![integer_literal]
             | lit @ T![hex_integer_literal]
             | lit @ T![octal_integer_literal]
@@ -176,19 +193,20 @@ where
             | lit @ T![nothing]
             | lit @ T![empty]
             | lit @ T![null] => {
-                let literal_text = {
-                    // the calls on `self` need to be split, because `next` takes
-                    // `&mut self` if `peek` is not `T![EOF]`, then there must be
-                    // a next token
-                    let literal_token = self.next().unwrap();
-                    self.text(&literal_token)
+                let literal_token = *self.peek_full()?;
+                self.consume(lit)?;
+                let literal_text = self.text(&literal_token);
+                let invalid = |kind: &str| {
+                    ParseError::new(
+                        format!("Invalid {kind} literal: `{literal_text}`"),
+                        literal_token.line,
+                        literal_token.column,
+                    )
                 };
                 // We are using parse here which is for parsing rust literals, we might have to
                 // implement our own parser for VBScript literals
                 let literal = match lit {
-                    T![integer_literal] => Lit::Int(literal_text.parse().unwrap_or_else(|e| {
-                        panic!("invalid integer literal: `{literal_text} ({e})`")
-                    })),
+                    T![integer_literal] => Lit::Int(literal_text.to_string()),
                     T![hex_integer_literal] => {
                         // trim the &H prefix
                         // trim possible & suffix (for long hex literals)
@@ -197,9 +215,10 @@ where
                         } else {
                             &literal_text[2..]
                         };
-                        Lit::int(isize::from_str_radix(trimmed, 16).unwrap_or_else(|e| {
-                            panic!("invalid hex integer literal: `{literal_text}` ({e})")
-                        }))
+                        Lit::int(
+                            isize::from_str_radix(trimmed, 16)
+                                .map_err(|_| invalid("hex integer"))?,
+                        )
                     }
                     T![octal_integer_literal] => {
                         // trim the `&` prefix, an optional `O`, and a possible `&` Long suffix
@@ -207,13 +226,16 @@ where
                             .trim_start_matches('&')
                             .trim_start_matches(['O', 'o'])
                             .trim_end_matches('&');
-                        Lit::int(isize::from_str_radix(digits, 8).unwrap_or_else(|_| {
-                            panic!("invalid octal integer literal: `{literal_text}`")
-                        }))
+                        Lit::int(
+                            isize::from_str_radix(digits, 8)
+                                .map_err(|_| invalid("octal integer"))?,
+                        )
                     }
-                    T![real_literal] => Lit::Float(literal_text.parse().unwrap_or_else(|_| {
-                        panic!("invalid floating point literal: `{literal_text}`")
-                    })),
+                    T![real_literal] => Lit::Float(
+                        literal_text
+                            .parse()
+                            .map_err(|_| invalid("floating point"))?,
+                    ),
                     T![string_literal] => Lit::Str(
                         // trim the quotation marks
                         // replace double quotes with single quotes
@@ -236,11 +258,12 @@ where
                 Some(literal)
             }
             _ => None,
-        }
+        };
+        Ok(literal)
     }
 
     fn parse_expression_lhs(&mut self) -> Result<Expr, ParseError> {
-        if let Some(literal) = self.parse_literal() {
+        if let Some(literal) = self.literal()? {
             return Ok(Expr::Literal(literal));
         }
 

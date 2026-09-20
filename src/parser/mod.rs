@@ -32,12 +32,24 @@ impl Debug for ParseError {
     }
 }
 
+/// Maximum nesting depth of expressions and statements.
+///
+/// The parser is recursive, so without a limit a deeply nested input like `((((...))))`
+/// overflows the stack, which aborts the process instead of returning an error.
+///
+/// A level of nested `If` blocks takes about 12 KiB of stack in a debug build, so this
+/// fits the 2 MiB default stack of a Rust thread. Real scripts stay far below it: the
+/// deepest nesting in the test corpus is 26.
+const MAX_NESTING_DEPTH: usize = 128;
+
 pub struct Parser<'input, I>
 where
     I: Iterator<Item = Token>,
 {
     input: &'input str,
     tokens: Peekable<I>,
+    /// Current nesting depth of expressions and statements, see [`MAX_NESTING_DEPTH`].
+    depth: usize,
 }
 
 impl<'input> Parser<'input, TokenIter<'input>> {
@@ -45,6 +57,7 @@ impl<'input> Parser<'input, TokenIter<'input>> {
         Parser {
             input,
             tokens: TokenIter::new(input).peekable(),
+            depth: 0,
         }
     }
 }
@@ -53,6 +66,27 @@ impl<'input, I> Parser<'input, I>
 where
     I: Iterator<Item = Token>,
 {
+    /// Register one more level of nesting, fails if the input is nested too deep.
+    pub(crate) fn enter_nested(&mut self) -> Result<(), ParseError> {
+        if self.depth >= MAX_NESTING_DEPTH {
+            let (line, column) = self
+                .tokens
+                .peek()
+                .map_or((0, 0), |token| (token.line, token.column));
+            return Err(ParseError::new(
+                format!("Nesting deeper than {MAX_NESTING_DEPTH} levels is not supported"),
+                line,
+                column,
+            ));
+        }
+        self.depth += 1;
+        Ok(())
+    }
+
+    pub(crate) fn leave_nested(&mut self) {
+        self.depth -= 1;
+    }
+
     /// Get the source text of a token.
     pub fn text(&self, token: &Token) -> &'input str {
         token.text(self.input)
@@ -964,6 +998,59 @@ Const a = 1			' some info
                 }),
             ]
         );
+    }
+
+    #[test]
+    fn test_invalid_input_is_an_error_instead_of_a_panic() {
+        for (input, expected) in [
+            ("Option Foo", "Expected `explicit` after `option`"),
+            ("On Error Foo", "Expected `resume next` or `goto 0`"),
+            // more than 32 bits is a syntax error on Windows
+            ("x = &HFFFFFFFFFFFFFFFFFF", "Invalid hex integer literal"),
+            (
+                "x = &O7777777777777777777777777",
+                "Invalid octal integer literal",
+            ),
+            (
+                "Class C\nPublic a\nPublic Sub A()\nEnd Sub\nEnd Class",
+                "Name redefined 'A'",
+            ),
+            (
+                "Class C\nPublic a(99999999999999999999999)\nEnd Class",
+                "Expected integer literal as bound",
+            ),
+        ] {
+            let error = Parser::new(input).file().unwrap_err();
+            assert!(
+                format!("{error:?}").contains(expected),
+                "{input}: {error:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_nesting_too_deep_is_an_error_instead_of_a_stack_overflow() {
+        let inputs = [
+            format!("x = {}1{}", "(".repeat(100_000), ")".repeat(100_000)),
+            format!("x = {}1", "Not ".repeat(100_000)),
+            format!("{}x = 1\n", "If a Then\n".repeat(100_000)),
+        ];
+        for input in inputs {
+            let error = Parser::new(&input).file().unwrap_err();
+            assert!(format!("{error:?}").contains("Nesting deeper than"));
+        }
+    }
+
+    #[test]
+    fn test_nesting_below_the_limit() {
+        let input = format!("x = {}1{}", "(".repeat(100), ")".repeat(100));
+        assert!(Parser::new(&input).file().is_ok());
+        let input = format!(
+            "{}x = 1\n{}",
+            "If a Then\n".repeat(100),
+            "End If\n".repeat(100)
+        );
+        assert!(Parser::new(&input).file().is_ok());
     }
 
     #[test]
