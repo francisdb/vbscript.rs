@@ -534,90 +534,24 @@ where
         })
     }
 
+    /// The name of a member, after the dot.
+    ///
+    /// Keywords are valid here, as in `x.end`, but that needs no handling: the lexer does
+    /// not look for keywords in the word that follows a dot.
     pub(crate) fn member_identifier(&mut self) -> Result<String, ParseError> {
-        const ITEM_TYPE: &str = "member identifier";
-        let ident = match self.next() {
-            Some(ident) => ident,
-            None => {
-                let peek_full = self.peek_full()?;
-                return Err(ParseError::new(
-                    format!(
-                        "Expected identifier as {}, but found `{}`",
-                        ITEM_TYPE, peek_full.kind
-                    ),
-                    peek_full.line,
-                    peek_full.column,
-                ));
-            }
-        };
-        match ident.kind {
-            T![ident]
-            | T![true]
-            | T![false]
-            | T![not]
-            | T![and]
-            | T![or]
-            | T![xor]
-            | T![eqv]
-            | T![imp]
-            | T![mod]
-            | T![is]
-            | T![call]
-            | T![dim]
-            | T![sub]
-            | T![function]
-            | T![get]
-            | T![let]
-            | T![const]
-            | T![if]
-            | T![else]
-            | T![elseif]
-            | T![end]
-            | T![then]
-            | T![exit]
-            | T![while]
-            | T![wend]
-            | T![do]
-            | T![loop]
-            | T![until]
-            | T![for]
-            | T![to]
-            | T![each]
-            | T![in]
-            | T![select]
-            | T![case]
-            | T![byref]
-            | T![byval]
-            | T![option]
-            | T![nothing]
-            | T![empty]
-            | T![null]
-            | T![class]
-            | T![set]
-            | T![new]
-            | T![public]
-            | T![private]
-            | T![next]
-            | T![on]
-            | T![resume]
-            | T![goto]
-            | T![with]
-            | T![redim]
-            | T![preserve]
-            | T![property]
-            | T![me]
-            | T![stop]
-            | T![step]
-            | T![unused] => Ok(self.text(&ident).to_string()),
-            _ => Err(ParseError::new(
+        let peek = self.peek_full()?;
+        if peek.kind != T![ident] {
+            return Err(ParseError::new(
                 format!(
-                    "Expected identifier as {}, but found `{}`",
-                    ITEM_TYPE, ident.kind
+                    "Expected identifier as member identifier, but found `{}`",
+                    peek.kind
                 ),
-                ident.line,
-                ident.column,
-            )),
+                peek.line,
+                peek.column,
+            ));
         }
+        let ident = self.consume(T![ident])?;
+        Ok(self.text(&ident).to_string())
     }
 
     /// Parse a block of statements until we reach an `end` token.
