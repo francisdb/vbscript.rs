@@ -1,6 +1,6 @@
 use crate::lexer::generated::LogosToken;
 use logos::Logos;
-pub use token::{Token, TokenKind};
+pub use token::{Span, Token, TokenKind};
 
 use crate::T;
 
