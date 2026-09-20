@@ -1952,6 +1952,68 @@ Const a = 1			' some info
         assert_eq!((error.line(), error.column()), (2, 12), "{error}");
     }
 
+    /// Valid for `cscript` on Windows: the dot of a with block right after an operator or a
+    /// keyword, without whitespace.
+    #[test]
+    fn test_with_dot_without_whitespace_before_it() {
+        for line in [
+            "x =.p",
+            "x = 1 +.p",
+            "x = 1 *.p",
+            "x = a <.p",
+            "x = a =.p",
+            "x = Not.p",
+            "x = a And.p",
+            "x = a Or.p",
+            "x = a Mod.p",
+            "x = a&.p",
+            "x = -.p",
+            "x = (.p)",
+            "x = f(1,.p)",
+            "If a Then.p = 1",
+            "Select Case.p\nEnd Select",
+            "Do While.p\nLoop",
+        ] {
+            let input = format!("With o\n{line}\nEnd With\n");
+            let result = Parser::new(&input).file();
+            assert!(result.is_ok(), "{line}: {result:?}");
+        }
+    }
+
+    #[test]
+    fn test_member_dot_and_with_dot() {
+        // right after a name, a `)`, `Me` or a string it is a member access
+        for (input, expected) in [
+            ("x = a.p", "a.p"),
+            ("x = f(1).p", "f(1).p"),
+            ("x = Me.p", "Me.p"),
+            ("x = a.b.c", "a.b.c"),
+            // also over a line continuation
+            ("x = a _\n  .p", "a.p"),
+            // after an operator it is the one of a with block
+            ("x = a +.p", "(a + ..p)"),
+        ] {
+            let items = parse_file(input);
+            let ItemKind::Statement(stmt) = &items[0].node else {
+                panic!("expected a statement")
+            };
+            let StmtKind::Assignment { value, .. } = &stmt.node else {
+                panic!("expected an assignment")
+            };
+            assert_eq!(value.to_string(), expected, "{input}");
+        }
+        // whitespace before the dot makes it the argument of a call
+        let items = parse_file("Foo .p");
+        let ItemKind::Statement(stmt) = &items[0].node else {
+            panic!("expected a statement")
+        };
+        let StmtKind::SubCall { fn_name, args } = &stmt.node else {
+            panic!("expected a sub call")
+        };
+        assert_eq!(fn_name.to_string(), "Foo");
+        assert_eq!(args[0].as_ref().unwrap().to_string(), "..p");
+    }
+
     #[test]
     fn test_single_line_if() {
         let input = r#"If Err Then MsgBox "Oh noes""#;
