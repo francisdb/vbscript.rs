@@ -317,7 +317,7 @@ mod test {
     use crate::parser::ast::{
         Argument, ArgumentType, Case, DoLoopCheck, DoLoopCondition, Expr, ExprKind, FullIdent,
         Item, ItemKind, Lit, MemberAccess, MemberDefinitions, PropertyType, PropertyVisibility,
-        SetRhs, Stmt, StmtKind, VarDecl, Visibility,
+        ReDimVar, SetRhs, Stmt, StmtKind, VarDecl, Visibility,
     };
     use indoc::indoc;
     use pretty_assertions::assert_eq;
@@ -351,7 +351,7 @@ mod test {
             vec![
                 ItemKind::Statement(
                     StmtKind::Dim {
-                        vars: vec![("x".to_string(), vec![]), ("y".to_string(), vec![]),],
+                        vars: vec![VarDecl::new("x"), VarDecl::new("y"),],
                     }
                     .into()
                 )
@@ -1751,6 +1751,25 @@ Const a = 1			' some info
         }
     }
 
+    /// `cscript` on Windows fails with "Expected integer constant" for these, the bounds of
+    /// a `Dim` are integer literals. Only `ReDim` takes expressions, and needs them.
+    #[test]
+    fn test_invalid_array_bounds() {
+        for input in [
+            "Dim a(n)",
+            "Dim a(1 + 1)",
+            "Dim a(-1)",
+            "Dim a(1.5)",
+            "Public a(n)",
+            "ReDim a",
+            "ReDim a()",
+            "ReDim a(1), b",
+        ] {
+            let result = Parser::new(input).file();
+            assert!(result.is_err(), "{input}: {result:?}");
+        }
+    }
+
     #[test]
     fn test_single_line_if() {
         let input = r#"If Err Then MsgBox "Oh noes""#;
@@ -2188,7 +2207,7 @@ Const a = 1			' some info
         assert_eq!(
             stmt,
             StmtKind::Dim {
-                vars: vec![("x".to_string(), vec![Expr::int(1), Expr::int(2)])],
+                vars: vec![VarDecl::array("x", vec![1, 2])],
             }
             .into()
         );
@@ -2201,7 +2220,7 @@ Const a = 1			' some info
         assert_eq!(
             stmt,
             StmtKind::Dim {
-                vars: vec![("PlayerMode".to_string(), vec![Expr::int(2)])],
+                vars: vec![VarDecl::array("PlayerMode", vec![2])],
             }
             .into()
         );
@@ -2209,25 +2228,18 @@ Const a = 1			' some info
 
     #[test]
     fn parse_dim_multiple() {
-        let input = "Dim x,y, z(1 + 3)";
+        let input = "Dim x,y, z(1, 3), dynamic(), h(&H10)";
         let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
             StmtKind::Dim {
                 vars: vec![
-                    ("x".to_string(), vec![]),
-                    ("y".to_string(), vec![]),
-                    (
-                        "z".to_string(),
-                        vec![
-                            InfixOp {
-                                op: T![+],
-                                lhs: Box::new(Expr::int(1)),
-                                rhs: Box::new(Expr::int(3)),
-                            }
-                            .into()
-                        ]
-                    ),
+                    VarDecl::new("x"),
+                    VarDecl::new("y"),
+                    VarDecl::array("z", vec![1, 3]),
+                    // not the same as `Dim dynamic`
+                    VarDecl::array("dynamic", vec![]),
+                    VarDecl::array("h", vec![16]),
                 ],
             }
             .into()
@@ -2510,9 +2522,9 @@ Const a = 1			' some info
                 ItemKind::Statement(
                     StmtKind::ReDim {
                         preserve: true,
-                        var_bounds: vec![(
-                            "tmp".to_string(),
-                            vec![
+                        vars: vec![ReDimVar {
+                            name: "tmp".to_string(),
+                            bounds: vec![
                                 InfixOp {
                                     op: T![+],
                                     lhs: Box::new(
@@ -2538,8 +2550,8 @@ Const a = 1			' some info
                                     rhs: Box::new(Expr::int(1)),
                                 }
                                 .into()
-                            ]
-                        )]
+                            ],
+                        }],
                     }
                     .into()
                 )
@@ -2556,9 +2568,15 @@ Const a = 1			' some info
             stmt,
             StmtKind::ReDim {
                 preserve: false,
-                var_bounds: vec![
-                    ("a".to_string(), vec![Expr::ident("length")]),
-                    ("b".to_string(), vec![Expr::int(2), Expr::int(3)]),
+                vars: vec![
+                    ReDimVar {
+                        name: "a".to_string(),
+                        bounds: vec![Expr::ident("length")],
+                    },
+                    ReDimVar {
+                        name: "b".to_string(),
+                        bounds: vec![Expr::int(2), Expr::int(3)],
+                    },
                 ],
             }
             .into()
@@ -3307,7 +3325,7 @@ Const a = 1			' some info
             vec![
                 ItemKind::Statement(
                     StmtKind::Dim {
-                        vars: vec![("LutToggleSoundLevel".to_string(), vec![])],
+                        vars: vec![VarDecl::new("LutToggleSoundLevel")],
                     }
                     .into()
                 )
@@ -3892,7 +3910,7 @@ Const a = 1			' some info
             file,
             vec![
                 ItemKind::Statement(StmtKind::Dim {
-                    vars: vec![("Error".to_string(), vec![])],
+                    vars: vec![VarDecl::new("Error")],
                 }.into()).into(),
                 ItemKind::Statement(StmtKind::Assignment {
                     full_ident: FullIdent::ident("Error"),
@@ -4033,35 +4051,35 @@ Const a = 1			' some info
             file,
             vec![
                 ItemKind::Statement(StmtKind::Dim {
-                    vars: vec![("default".to_string(), vec![])],
+                    vars: vec![VarDecl::new("default")],
                 }.into()).into(),
                 ItemKind::Statement(StmtKind::Assignment {
                     full_ident: FullIdent::ident("default"),
                     value: Box::new(Expr::int(1)),
                 }.into()).into(),
                 ItemKind::Statement(StmtKind::Dim {
-                    vars: vec![("error".to_string(), vec![])],
+                    vars: vec![VarDecl::new("error")],
                 }.into()).into(),
                 ItemKind::Statement(StmtKind::Assignment {
                     full_ident: FullIdent::ident("error"),
                     value: Box::new(Expr::int(2)),
                 }.into()).into(),
                 ItemKind::Statement(StmtKind::Dim {
-                    vars: vec![("explicit".to_string(), vec![])],
+                    vars: vec![VarDecl::new("explicit")],
                 }.into()).into(),
                 ItemKind::Statement(StmtKind::Assignment {
                     full_ident: FullIdent::ident("explicit"),
                     value: Box::new(Expr::int(3)),
                 }.into()).into(),
                 ItemKind::Statement(StmtKind::Dim {
-                    vars: vec![("step".to_string(), vec![])],
+                    vars: vec![VarDecl::new("step")],
                 }.into()).into(),
                 ItemKind::Statement(StmtKind::Assignment {
                     full_ident: FullIdent::ident("step"),
                     value: Box::new(Expr::int(4)),
                 }.into()).into(),
                 ItemKind::Statement(StmtKind::Dim {
-                    vars: vec![("property".to_string(), vec![])],
+                    vars: vec![VarDecl::new("property")],
                 }.into()).into(),
                 ItemKind::Statement(StmtKind::Assignment {
                     full_ident: FullIdent::ident("property"),

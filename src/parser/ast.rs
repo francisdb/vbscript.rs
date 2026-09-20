@@ -335,11 +335,11 @@ pub struct Case {
 #[derive(Debug, Clone, PartialEq)]
 pub enum StmtKind {
     Dim {
-        vars: Vec<(String, Vec<Expr>)>,
+        vars: Vec<VarDecl>,
     },
     ReDim {
         preserve: bool,
-        var_bounds: Vec<(String, Vec<Expr>)>,
+        vars: Vec<ReDimVar>,
     },
     Const(Vec<(String, Lit)>),
     Set {
@@ -477,7 +477,16 @@ pub struct MemberDefinitions {
     pub properties: Vec<VarDecl>,
 }
 
-/// A variable that is declared in a class or, with a visibility, at script level.
+/// An array that is given new bounds by a `ReDim` statement.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ReDimVar {
+    pub name: String,
+    /// The new upper bounds, at least one. Unlike the ones of a `Dim` these are expressions.
+    pub bounds: Vec<Expr>,
+}
+
+/// A variable that is declared with `Dim`, in a class or, with a visibility, at script
+/// level.
 #[derive(Debug, Clone, PartialEq)]
 pub struct VarDecl {
     pub name: String,
@@ -537,7 +546,7 @@ pub enum ItemKind {
 impl Stmt {
     pub fn dim(var_name: impl Into<String>) -> Self {
         StmtKind::Dim {
-            vars: vec![(var_name.into(), Vec::new())],
+            vars: vec![VarDecl::new(var_name)],
         }
         .into()
     }
