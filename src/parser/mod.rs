@@ -1081,6 +1081,40 @@ Const a = 1			' some info
         assert!(Parser::new(&input).file().is_ok());
     }
 
+    /// Expected values are the output of `cscript` on Windows.
+    #[test]
+    fn test_hex_and_octal_literal_values() {
+        for (input, expected) in [
+            ("&H7FFF", 32767),
+            ("&H8000", -32768),
+            ("&HFFFF", -1),
+            ("&HFFFF&", 65535),
+            ("&H8000&", 32768),
+            ("&H10000", 65536),
+            ("&H7FFFFFFF", 2147483647),
+            ("&H80000000", -2147483648),
+            ("&HFFFFFFFF", -1),
+            ("&HFFFFFFFF&", -1),
+            ("&H0FFFFFFFF", -1),
+            ("&H00000000F", 15),
+            ("&O77777", 32767),
+            ("&O100000", -32768),
+            ("&O177777", -1),
+            ("&O177777&", 65535),
+            ("&O200000", 65536),
+            ("&O17777777777", 2147483647),
+            ("&O20000000000", -2147483648),
+            ("&O37777777777", -1),
+            ("&O037777777777", -1),
+            ("&177777", -1),
+        ] {
+            assert_eq!(parse(input), Expr::int(expected), "{input}");
+        }
+        for input in ["x = &H100000000", "x = &O40000000000"] {
+            assert!(Parser::new(input).file().is_err(), "{input}");
+        }
+    }
+
     #[test]
     fn test_single_line_if() {
         let input = r#"If Err Then MsgBox "Oh noes""#;

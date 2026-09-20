@@ -215,9 +215,10 @@ where
                         } else {
                             &literal_text[2..]
                         };
+                        let long = literal_text.ends_with('&');
                         Lit::int(
-                            isize::from_str_radix(trimmed, 16)
-                                .map_err(|_| invalid("hex integer"))?,
+                            radix_literal_value(trimmed, 16, long)
+                                .ok_or_else(|| invalid("hex integer"))?,
                         )
                     }
                     T![octal_integer_literal] => {
@@ -226,9 +227,10 @@ where
                             .trim_start_matches('&')
                             .trim_start_matches(['O', 'o'])
                             .trim_end_matches('&');
+                        let long = literal_text.ends_with('&');
                         Lit::int(
-                            isize::from_str_radix(digits, 8)
-                                .map_err(|_| invalid("octal integer"))?,
+                            radix_literal_value(digits, 8, long)
+                                .ok_or_else(|| invalid("octal integer"))?,
                         )
                     }
                     T![real_literal] => Lit::Float(
@@ -402,6 +404,21 @@ impl Operator for TokenKind {
     //     };
     //     Some(result)
     // }
+}
+
+/// The value of a hex or octal literal, `None` if it does not fit in 32 bits.
+///
+/// These literals are the two's complement bit pattern of the value. Without the `&` Long
+/// suffix anything up to `&HFFFF` is a 16 bit Integer, so `&HFFFF` is -1 while `&HFFFF&` is
+/// 65535. Everything else is a 32 bit Long, so `&HFFFFFFFF` is -1. Validated with `cscript`
+/// on Windows, which reports a syntax error for more than 32 bits.
+fn radix_literal_value(digits: &str, radix: u32, long: bool) -> Option<isize> {
+    let bits = u32::from_str_radix(digits, radix).ok()?;
+    let value = match u16::try_from(bits) {
+        Ok(bits) if !long => i32::from(bits as i16),
+        _ => bits as i32,
+    };
+    Some(value as isize)
 }
 
 #[cfg(test)]
