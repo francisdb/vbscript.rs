@@ -1293,6 +1293,7 @@ impl SpanCheck<'_> {
             }
             StmtKind::Sub { body, .. } | StmtKind::Function { body, .. } => self.stmts(body, span),
             StmtKind::Const(_)
+            | StmtKind::Stop
             | StmtKind::ExitDo
             | StmtKind::ExitFor
             | StmtKind::ExitFunction

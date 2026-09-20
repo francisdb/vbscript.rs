@@ -519,17 +519,11 @@ where
     pub(crate) fn identifier_opt(&mut self) -> Result<Option<String>, ParseError> {
         let peek = self.peek_full()?;
         Ok(match peek.kind {
-            // We might have to add more here.
-            // Probably the `unused` keyword will also be added here
-            T![ident]
-            | T![property]
-            | T![stop]
-            | T![option]
-            | T![step]
-            | T![default]
-            | T![set]
-            | T![error]
-            | T![me] => self.next().map(|token| self.text(&token).to_string()),
+            // The keywords that `cscript` on Windows accepts as a name. `explicit` and
+            // `erase` are valid as well but are no keywords for us.
+            T![ident] | T![property] | T![step] | T![default] | T![error] => {
+                self.next().map(|token| self.text(&token).to_string())
+            }
             _ => None,
         })
     }
@@ -670,6 +664,10 @@ where
             T![exit] => self.statement_exit(),
             T![with] => self.statement_with(),
             T![call] => self.statement_call(),
+            T![stop] => {
+                self.consume(T![stop])?;
+                Ok(StmtKind::Stop)
+            }
             T![sub] => self.statement_sub(Visibility::Default),
             T![function] => self.statement_function(Visibility::Default),
             T![private] | T![public] => {
@@ -700,18 +698,8 @@ where
                     }
                 }
             }
-            // property, stop, option, step was added here because it can also be used as identifier
-            // TODO find a better way to handle this without copy pasting
-            //   see `identifier()`
-            T![ident]
-            | T![me]
-            | T![.]
-            | T![property]
-            | T![stop]
-            | T![option]
-            | T![step]
-            | T![default]
-            | T![error] => {
+            // the keywords that can also be used as identifier, see `identifier()`
+            T![ident] | T![me] | T![.] | T![property] | T![step] | T![default] | T![error] => {
                 // multiple options here
                 // 1. assignment
                 // 2. sub call without args
@@ -1338,17 +1326,12 @@ where
         }
 
         let kind = match self.peek() {
-            // TODO deduplicate this list with identifier()
-            //   we have seen these tokens being used as identifiers
-            T![ident]
-            | T![me]
-            | T![property]
-            | T![stop]
-            | T![option]
-            | T![step]
-            | T![error]
-            | T![default]
-            | T![set] => {
+            // `Me` is an expression, it can not be declared as a name
+            T![me] => {
+                let me = self.consume(T![me])?;
+                ExprKind::Ident(self.text(&me).to_string())
+            }
+            T![ident] | T![property] | T![step] | T![error] | T![default] => {
                 let ident = self.identifier("identifier base")?;
                 ExprKind::Ident(ident)
             }
