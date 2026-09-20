@@ -363,7 +363,7 @@ where
         let explicit = match self.next() {
             Some(explicit) => explicit,
             None => {
-                return Err(ParseError::new("Expected identifier after `option`", 0, 0));
+                return Err(self.end_of_input_error("Expected identifier after `option`"));
             }
         };
         if explicit.kind != T![ident] || !self.text(&explicit).eq_ignore_ascii_case("explicit") {
@@ -383,11 +383,8 @@ where
         let ident = match self.next() {
             Some(ident) => ident,
             None => {
-                return Err(ParseError::new(
-                    "Tried to parse sub name, but there were no more tokens",
-                    0,
-                    0,
-                ));
+                return Err(self
+                    .end_of_input_error("Tried to parse sub name, but there were no more tokens"));
             }
         };
         if ident.kind != T![ident] {
@@ -422,10 +419,8 @@ where
         let ident = match self.next() {
             Some(ident) => ident,
             None => {
-                return Err(ParseError::new(
+                return Err(self.end_of_input_error(
                     "Tried to parse function name, but there were no more tokens",
-                    0,
-                    0,
                 ));
             }
         };
@@ -1005,10 +1000,11 @@ where
                 Stmt::ExitSub
             }
             other => {
+                let peek = self.peek_full()?;
                 return Err(ParseError::new(
                     format!("Exit not supported for `{other}`"),
-                    0,
-                    0,
+                    peek.line,
+                    peek.column,
                 ));
             }
         };
@@ -1064,10 +1060,11 @@ where
         let mut else_stmt = None;
         while !self.at(T![end]) {
             if else_stmt.is_some() {
+                let peek = self.peek_full()?;
                 return Err(ParseError::new(
                     "`else` statement must be last in `select case` block",
-                    0,
-                    0,
+                    peek.line,
+                    peek.column,
                 ));
             }
             self.consume(T![case])?;
@@ -1105,9 +1102,9 @@ where
 
         if self.at(T![each]) {
             self.consume(T![each])?;
-            let element = self
-                .next()
-                .ok_or_else(|| ParseError::new("Expected loop variable after `for each`", 0, 0))?;
+            let element = self.next().ok_or_else(|| {
+                self.end_of_input_error("Expected loop variable after `for each`")
+            })?;
             let element_name = self.text(&element).to_string();
             self.consume(T![in])?;
             let group = Box::new(self.expression()?);
@@ -1125,7 +1122,7 @@ where
         } else {
             let counter = self
                 .next()
-                .ok_or_else(|| ParseError::new("Expected loop counter after `for`", 0, 0))?;
+                .ok_or_else(|| self.end_of_input_error("Expected loop counter after `for`"))?;
             let counter_name = self.text(&counter).to_string();
             self.consume(T![=])?;
             let start = self.expression()?;

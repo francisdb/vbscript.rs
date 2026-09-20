@@ -78,6 +78,8 @@ where
     tokens: Peekable<I>,
     /// Current nesting depth of expressions and statements, see [`MAX_NESTING_DEPTH`].
     depth: usize,
+    /// Line and column of the last token that was consumed, (0, 0) if there was none yet.
+    last_position: (usize, usize),
 }
 
 impl<'input> Parser<'input, TokenIter<'input>> {
@@ -86,6 +88,7 @@ impl<'input> Parser<'input, TokenIter<'input>> {
             input,
             tokens: TokenIter::new(input).peekable(),
             depth: 0,
+            last_position: (0, 0),
         }
     }
 }
@@ -129,12 +132,13 @@ where
     }
 
     pub(crate) fn peek_full(&mut self) -> Result<&Token, ParseError> {
+        let (line, column) = self.last_position;
         match self.tokens.peek() {
             Some(token) => Ok(token),
             None => Err(ParseError::new(
-                "Expected a token, but found EOF".to_string(),
-                0,
-                0,
+                "Expected a token, but found EOF",
+                line,
+                column,
             )),
         }
     }
@@ -146,19 +150,31 @@ where
 
     /// Get the next token.
     pub(crate) fn next(&mut self) -> Option<Token> {
-        self.tokens.next()
+        let token = self.tokens.next();
+        if let Some(token) = &token {
+            self.last_position = (token.line, token.column);
+        }
+        token
+    }
+
+    /// An error for when there are no tokens left, positioned at the last token we have seen
+    /// as that is the end of the input.
+    pub(crate) fn end_of_input_error(&self, message: impl Into<String>) -> ParseError {
+        let (line, column) = self.last_position;
+        ParseError::new(message, line, column)
     }
 
     /// Move forward one token in the input and check
     /// that we pass the kind of token we expect.
     pub(crate) fn consume(&mut self, expected: TokenKind) -> Result<Token, ParseError> {
-        let token = self.next().ok_or_else(|| {
-            ParseError::new(
-                format!("Expected to consume `{expected}`, but there was no next token"),
-                0,
-                0,
-            )
-        })?;
+        let token = match self.next() {
+            Some(token) => token,
+            None => {
+                return Err(self.end_of_input_error(format!(
+                    "Expected to consume `{expected}`, but there was no next token"
+                )));
+            }
+        };
         if token.kind != expected {
             return Err(ParseError::new(
                 format!(
@@ -1079,6 +1095,28 @@ Const a = 1			' some info
             "End If\n".repeat(100)
         );
         assert!(Parser::new(&input).file().is_ok());
+    }
+
+    #[test]
+    fn test_error_at_end_of_input_has_a_position() {
+        for (input, line, column) in [
+            ("x = 1\nFor Each", 2, 9),
+            ("x = 1\nFor", 2, 4),
+            ("x = 1\nOption", 2, 7),
+        ] {
+            let error = Parser::new(input).file().unwrap_err();
+            assert_eq!((error.line(), error.column()), (line, column), "{error}");
+        }
+    }
+
+    #[test]
+    fn test_error_position_for_exit_and_select_case() {
+        let error = Parser::new("x = 1\nExit While").file().unwrap_err();
+        assert_eq!((error.line(), error.column()), (2, 6), "{error}");
+
+        let input = "Select Case x\nCase Else\ny = 1\nCase 2\ny = 2\nEnd Select";
+        let error = Parser::new(input).file().unwrap_err();
+        assert_eq!((error.line(), error.column()), (4, 1), "{error}");
     }
 
     #[test]
