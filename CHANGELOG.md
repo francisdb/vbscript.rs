@@ -6,6 +6,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2](https://github.com/francisdb/vbscript.rs/compare/v0.4.1...v0.4.2) - 2026-09-20
+
+### Fixed
+
+- *(parser)* a sub or function can not be declared in a procedure
+- *(lexer)* accept the forms of a date literal that Windows takes
+- *(lexer)* the dot of a with block right after an operator or keyword ([#80](https://github.com/francisdb/vbscript.rs/pull/80))
+
+### Other
+
+- resolve the TODOs that were checked on Windows
+- add a fuzz target for the lexer and the parser ([#79](https://github.com/francisdb/vbscript.rs/pull/79))
+
 ## [0.4.1](https://github.com/francisdb/vbscript.rs/compare/v0.4.0...v0.4.1) - 2026-09-20
 
 ### Added
