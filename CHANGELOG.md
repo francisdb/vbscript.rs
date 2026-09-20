@@ -6,6 +6,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0](https://github.com/francisdb/vbscript.rs/compare/v0.4.2...v0.5.0) - 2026-09-20
+
+### Added
+
+- *(ast)* [**breaking**] add spans to the cases of a Select Case and to properties
+- *(ast)* [**breaking**] keep the Default of a sub or function of a class
+
+### Fixed
+
+- *(lexer)* [**breaking**] the column of a token and of a parse error counts characters
+
+### Other
+
+- *(parser)* [**breaking**] make the internals of the parser and the lexer private
+
 ## [0.4.2](https://github.com/francisdb/vbscript.rs/compare/v0.4.1...v0.4.2) - 2026-09-20
 
 ### Fixed
