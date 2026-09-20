@@ -5,7 +5,7 @@ https://crates.io/crates/vbscript
 
 ## Documentation
 
-https://docs.rs/vpin
+https://docs.rs/vbscript
 
 ## Example code
 
@@ -34,10 +34,10 @@ https://github.com/francisdb/vbsfmt
 
 ## Running the integration tests
 
-Make sure you populate the `testsctipts` folder, feel free to add more vbs files to the folder.
+Make sure you populate the `testscripts` folder, feel free to add more vbs files to the folder.
 
 ```bash
-./testsctipts/populate.sh
+./testscripts/populate.sh
 ```
 
 Run the tests. They will also be included in the default `cargo test` run.
@@ -57,7 +57,7 @@ cargo bench
 
 ## Making a release
 
-We use https://github.com/MarcoIeni/release-plz which creates a release pr on every commit to master
+We use https://github.com/MarcoIeni/release-plz which creates a release pr on every commit to main
 
 ## Attributions
 
