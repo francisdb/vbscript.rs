@@ -97,13 +97,13 @@ pub(super) enum LogosToken {
         priority = 100
     )]
     Float((usize, usize)),
-    // TODO what is that last date format, test on windows!
-    // The day in the `#M/D/YYYY#` form is 1-2 digits (1-31); it must not be
-    // restricted to `\d[0-2]?`, which rejects days like 13-19 and 23-29.
-    #[regex(
-        r#"# *[0-9][0-9]?/[0-9][0-9]?/[0-9]{4} *#|#[0-9]{4}-[0-9][0-2]?-[0-9][0-9]?#|#[0-9]{3}-[0-9][0-9]?#"#,
-        word_callback
-    )]
+    // A date, a time or both, in one of the many forms that `cscript` on Windows takes:
+    // `#1/2/2020#`, `#2020-01-02#`, `#1/2/20#`, `#12-25#`, `#Jan 2, 2020#`, `#2 Jan 2020#`,
+    // `#10:30#`, `#10:30:15 PM#`, `#1/2/2020 10:30:00 AM#`, with spaces around it. It fails
+    // for `#1.2.2020#`, for `##` and for `#hello#`, so there has to be a digit and there is
+    // no dot. It also fails for a date that does not exist like `#13/13/2020#` and for
+    // `#123-45#`, which needs a calendar to tell; those are a date literal here.
+    #[regex(r"#[ 0-9A-Za-z/:,\-]*[0-9][ 0-9A-Za-z/:,\-]*#", word_callback)]
     DateTime((usize, usize)),
 
     // Keywords also arrive as `Ident`, there are no rules for them on purpose. The lexer

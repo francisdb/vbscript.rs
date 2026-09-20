@@ -1327,6 +1327,33 @@ Const a = 1			' some info
         }
     }
 
+    /// What `cscript` on Windows takes as a date literal, and what it does not.
+    #[test]
+    fn test_date_literal_forms() {
+        for (literal, text) in [
+            ("#1/2/2020#", "1/2/2020"),
+            ("# 1/2/2020 #", " 1/2/2020 "),
+            ("#2020-01-02#", "2020-01-02"),
+            ("#1/2/20#", "1/2/20"),
+            ("#12-25#", "12-25"),
+            ("#Jan 2, 2020#", "Jan 2, 2020"),
+            ("#2 Jan 2020#", "2 Jan 2020"),
+            ("#10:30#", "10:30"),
+            ("#10:30:15 PM#", "10:30:15 PM"),
+            ("#1/2/2020 10:30:00 AM#", "1/2/2020 10:30:00 AM"),
+        ] {
+            assert_eq!(
+                parse(literal),
+                ExprKind::Literal(Lit::DateTime(text.to_string())).into(),
+                "{literal}"
+            );
+        }
+        for literal in ["#1.2.2020#", "##", "#hello#", "#1/2/2020"] {
+            let result = Parser::new(&format!("x = {literal}\n")).file();
+            assert!(result.is_err(), "{literal}: {result:?}");
+        }
+    }
+
     #[test]
     fn test_error_at_end_of_input_has_a_position() {
         for (input, line, column) in [
