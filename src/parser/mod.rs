@@ -10,8 +10,8 @@ pub mod visit;
 
 /// Why a script could not be parsed, and where.
 ///
-/// The line and the column start at 1, 0 stands for unknown. The column counts bytes, like
-/// the one of a [`Token`].
+/// The line and the column start at 1, 0 stands for unknown. The column counts characters,
+/// like the one of a [`Token`].
 #[derive(Clone, PartialEq, Eq)]
 pub struct ParseError {
     message: String,
@@ -1990,6 +1990,13 @@ Const a = 1			' some info
                 ("value".into(), ArgumentType::ByVal),
             ]
         );
+    }
+
+    #[test]
+    fn test_error_column_counts_characters() {
+        // the `)` is the 13th character and the 19th byte
+        let error = Parser::new("x = \"é€😀\" & )").file().unwrap_err();
+        assert_eq!((error.line(), error.column()), (1, 13), "{error}");
     }
 
     #[test]

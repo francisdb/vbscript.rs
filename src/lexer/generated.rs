@@ -10,20 +10,39 @@ fn newline_callback(lex: &mut Lexer<LogosToken>) -> (usize, usize) {
     let position = word_callback(lex);
     lex.extras.0 += 1;
     lex.extras.1 = lex.span().end;
+    lex.extras.2 = 0;
     position
 }
 
 /// Compute the line and column position for the current word.
+///
+/// The column counts characters. The offsets are in bytes, so what the line so far has
+/// more in bytes than in characters is taken off.
 fn word_callback(lex: &mut Lexer<LogosToken>) -> (usize, usize) {
     let line = lex.extras.0;
-    let column = lex.span().start - lex.extras.1;
+    let column = lex.span().start - lex.extras.1 - lex.extras.2;
 
     (line, column)
+}
+
+/// The position of a token that can have characters of more than one byte: a string, a
+/// comment or a name in brackets. All other rules only match ASCII.
+fn wide_callback(lex: &mut Lexer<LogosToken>) -> (usize, usize) {
+    let position = word_callback(lex);
+    count_wide_characters(lex);
+    position
+}
+
+/// Keeps track of what the line has more in bytes than in characters.
+pub(super) fn count_wide_characters(lex: &mut Lexer<LogosToken>) {
+    let text = lex.slice();
+    lex.extras.2 += text.len() - text.chars().count();
 }
 /* ANCHOR_END: callbacks */
 
 #[derive(Logos, Debug, PartialEq, Eq)]
-#[logos(extras = (usize, usize))]
+// the line, the offset of its start, and how many bytes it has more than characters so far
+#[logos(extras = (usize, usize, usize))]
 pub(super) enum LogosToken {
     // A property access can not have whitespace between the name and the dot, but it can
     // after the dot. Which of the two a dot is depends on the token before it, which the
@@ -69,7 +88,7 @@ pub(super) enum LogosToken {
     #[token(")", word_callback)]
     RParen((usize, usize)),
     // Constructs
-    #[regex(r#""([^"]|"")*""#, word_callback)]
+    #[regex(r#""([^"]|"")*""#, wide_callback)]
     String((usize, usize)),
     #[regex(r#"[0-9]+"#, word_callback, priority = 6)]
     Int((usize, usize)),
@@ -110,7 +129,7 @@ pub(super) enum LogosToken {
     #[regex(r#"([A-Za-z])([A-Za-z]|_|[0-9])*"#, word_callback)]
     // Escaped/bracketed identifier, e.g. `[L178 Side Flasher]`, which may contain
     // spaces and other characters that are not valid in a bare identifier.
-    #[regex(r#"\[[^\]]*\]"#, word_callback)]
+    #[regex(r#"\[[^\]]*\]"#, wide_callback)]
     Ident((usize, usize)),
 
     // Misc
@@ -125,8 +144,8 @@ pub(super) enum LogosToken {
     LineContinuation((usize, usize)),
 
     // comments using '
-    #[regex(r"(?i)'[^\r\n]*", allow_greedy = true)]
-    Comment,
+    #[regex(r"(?i)'[^\r\n]*", wide_callback, allow_greedy = true)]
+    Comment((usize, usize)),
 }
 
 impl LogosToken {
@@ -161,7 +180,7 @@ impl LogosToken {
             RParen((line, column)) => (*line, *column),
             Semi((line, column)) => (*line, *column),
             WS => (0, 0),
-            Comment => (0, 0),
+            Comment((line, column)) => (*line, *column),
             LineContinuation((line, column)) => (*line, *column),
         };
         // line and column are 0-indexed
@@ -200,7 +219,7 @@ impl LogosToken {
             DateTime(_)  => T![date_time_literal],
             Ident(_)     => T![ident],
             WS           => T![ws],
-            Comment      => T![comment],
+            Comment(_)   => T![comment],
             NewLine(_)   => T![nl],
             LineContinuation(_) => T![line_continuation],
         }

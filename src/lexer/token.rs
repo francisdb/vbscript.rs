@@ -7,7 +7,8 @@ pub struct Token {
     pub span: Span,
     /// 1-indexed, 0 means unknown
     pub line: usize,
-    /// 1-indexed, 0 means unknown
+    /// 1-indexed, 0 means unknown. Counts characters, not bytes, like a
+    /// [`LineIndex`](super::LineIndex) does.
     pub column: usize,
 }
 

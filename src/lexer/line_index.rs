@@ -7,9 +7,8 @@ use super::Span;
 /// is a binary search, so it suits many lookups in a large script.
 ///
 /// Lines and columns start at 1. Lines end with `\r\n`, `\r` or `\n`, like for the lexer.
-/// The column counts characters, not bytes: it is what an editor shows. That differs from
-/// the column of a [`Token`](super::Token) or a parse error, which counts bytes, on a line
-/// that has characters outside of ASCII before the position.
+/// The column counts characters, not bytes: it is what an editor shows, and what the column
+/// of a [`Token`](super::Token) and of a parse error count.
 ///
 /// ```
 /// use vbscript::lexer::LineIndex;
