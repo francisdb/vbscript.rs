@@ -6,6 +6,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1](https://github.com/francisdb/vbscript.rs/compare/v0.3.0...v0.3.1) - 2026-09-20
+
+### Added
+
+- *(parser)* make ParseError usable as a std error
+
+### Fixed
+
+- *(lexer)* a word that follows a dot is always an identifier
+- *(lexer)* do not panic on reserved words that have no token kind
+- *(parser)* give hex and octal literals the value they have on Windows
+- *(parser)* give every parse error a position instead of line 0
+- *(lexer)* report the real position of error, whitespace, comment and EOF tokens
+- *(parser)* return a ParseError instead of panicking or overflowing the stack
+- *(lexer)* accept floats with a multi-digit integral and an exponent
+- *(lexer)* only accept ASCII digits in numbers and identifiers ([#41](https://github.com/francisdb/vbscript.rs/pull/41))
+
+### Other
+
+- *(lexer)* resolve keywords outside of the generated lexer
+- complete the package metadata
+- fix the docs.rs link, testscripts path and branch name in the README
+
 ## [0.3.0](https://github.com/francisdb/vbscript.rs/compare/v0.2.5...v0.3.0) - 2026-09-08
 
 ### Other
