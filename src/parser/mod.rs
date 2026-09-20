@@ -437,11 +437,13 @@ Const a = 1			' some info
         let expr = parse("(-13)");
         assert_eq!(
             expr,
-            ExprKind::PrefixOp {
-                op: T![-],
-                expr: Box::new(Expr::int(13)),
-            }
-            .into()
+            Expr::paren(
+                ExprKind::PrefixOp {
+                    op: T![-],
+                    expr: Box::new(Expr::int(13)),
+                }
+                .into()
+            )
         );
     }
 
@@ -1373,8 +1375,12 @@ Const a = 1			' some info
         let ExprKind::InfixOp { lhs, rhs, .. } = &lhs.node else {
             panic!("expected an infix operator")
         };
-        // there is no node for the parentheses, they are part of what they group
+        // the node for the parentheses, which holds the expression without them
         assert_eq!(text(input, lhs), "(a + b)");
+        let ExprKind::Paren(inner) = &lhs.node else {
+            panic!("expected a parenthesized expression")
+        };
+        assert_eq!(text(input, inner), "a + b");
         assert_eq!(text(input, rhs), "-c.d(1, e)");
         let ExprKind::PrefixOp { expr, .. } = &rhs.node else {
             panic!("expected a prefix operator")
@@ -1479,7 +1485,7 @@ Const a = 1			' some info
     fn test_sub_call_with_parenthesized_argument_before_else_or_end() {
         let call: Stmt = StmtKind::SubCall {
             fn_name: FullIdent::ident("Foo"),
-            args: vec![Some(Expr::ident("a"))],
+            args: vec![Some(Expr::paren(Expr::ident("a")))],
         }
         .into();
         let other: Stmt = StmtKind::SubCall {
@@ -1568,6 +1574,96 @@ Const a = 1			' some info
         };
         assert_eq!(*object.0, Expr::new("Foo"));
         assert_eq!(text(input, &object.0), "New Foo");
+    }
+
+    /// Parentheses around the only argument of a sub call pass it by value. Verified with
+    /// `cscript` on Windows: `Inc x` and `Call Inc(x)` change `x` for a `ByRef` parameter,
+    /// `Inc (x)`, `Inc(x)` and `Call Inc((x))` do not.
+    #[test]
+    fn test_sub_call_argument_in_parentheses_is_kept() {
+        let by_reference: Stmt = StmtKind::SubCall {
+            fn_name: FullIdent::ident("Inc"),
+            args: vec![Some(Expr::ident("x"))],
+        }
+        .into();
+        let by_value: Stmt = StmtKind::SubCall {
+            fn_name: FullIdent::ident("Inc"),
+            args: vec![Some(Expr::paren(Expr::ident("x")))],
+        }
+        .into();
+        assert_ne!(by_reference, by_value);
+        assert_eq!(parse_stmt("Inc x", false), by_reference);
+        for input in ["Inc (x)", "Inc(x)"] {
+            assert_eq!(parse_stmt(input, false), by_value, "{input}");
+        }
+
+        // the same, whatever follows the statement
+        let items = parse_file("Inc (x) : Inc (x)\nIf a Then Inc (x) Else Inc (x)\n");
+        let item = |stmt: &Stmt| Item::from(ItemKind::Statement(stmt.clone()));
+        assert_eq!(items[0], item(&by_value));
+        assert_eq!(items[1], item(&by_value));
+        let expected_if: Stmt = StmtKind::IfStmt {
+            condition: Box::new(Expr::ident("a")),
+            body: vec![by_value.clone()],
+            elseif_statements: vec![],
+            else_stmt: Some(vec![by_value.clone()]),
+        }
+        .into();
+        assert_eq!(items[2], item(&expected_if));
+
+        // the parentheses of a call are not an expression
+        let call = parse_stmt("Call Inc(x)", false);
+        assert_eq!(
+            call,
+            StmtKind::Call(FullIdent::new(Expr::fn_application(
+                Expr::ident("Inc"),
+                vec![Expr::ident("x")]
+            )))
+            .into()
+        );
+        let call = parse_stmt("Call Inc((x))", false);
+        assert_eq!(
+            call,
+            StmtKind::Call(FullIdent::new(Expr::fn_application(
+                Expr::ident("Inc"),
+                vec![Expr::paren(Expr::ident("x"))]
+            )))
+            .into()
+        );
+        // and neither are empty ones
+        assert_eq!(
+            parse_stmt("Inc()", false),
+            StmtKind::SubCall {
+                fn_name: FullIdent::new(Expr::fn_application(Expr::ident("Inc"), vec![])),
+                args: vec![],
+            }
+            .into()
+        );
+    }
+
+    #[test]
+    fn test_span_of_sub_call_argument_in_parentheses() {
+        let input = "Inc (x)";
+        let stmt = parse_stmt(input, false);
+        let StmtKind::SubCall { fn_name, args } = &stmt.node else {
+            panic!("expected a sub call")
+        };
+        assert_eq!(text(input, &fn_name.0), "Inc");
+        let arg = args[0].as_ref().unwrap();
+        assert_eq!(text(input, arg), "(x)");
+        let ExprKind::Paren(inner) = &arg.node else {
+            panic!("expected a parenthesized expression")
+        };
+        assert_eq!(text(input, inner), "x");
+    }
+
+    #[test]
+    fn test_display_of_parenthesized_expression() {
+        // operators are written with parentheses, those are not doubled
+        assert_eq!(parse("(a + b) * c").to_string(), "((a + b) * c)");
+        assert_eq!(parse("(-a)").to_string(), "(- a)");
+        assert_eq!(parse("(a)").to_string(), "(a)");
+        assert_eq!(parse("f((a), b)").to_string(), "f((a), b)");
     }
 
     #[test]
@@ -1752,11 +1848,11 @@ Const a = 1			' some info
             file,
             vec![
                 ItemKind::Statement(StmtKind::IfStmt {
-                    condition: Box::new(InfixOp {
+                    condition: Box::new(Expr::paren(InfixOp {
                         op: T![<>],
                         lhs: Box::new(Expr::ident("x")),
                         rhs: Box::new(ExprKind::Literal(Lit::Str("".to_string())).into()),
-                    }.into()),
+                    }.into())),
                     body: vec![StmtKind::Assignment {
                         full_ident: FullIdent::ident("LutValue"),
                         value: Box::new(Expr::fn_application(
@@ -2262,7 +2358,7 @@ Const a = 1			' some info
                     StmtKind::Set {
                         var: FullIdent::ident("DT1"),
                         rhs: SetRhs::Expr(Box::new(Expr::fn_application(
-                            Expr::new("DropTarget"),
+                            Expr::paren(Expr::new("DropTarget")),
                             vec![
                                 Expr::int(1),
                                 Expr::int(0),
@@ -3244,7 +3340,8 @@ Const a = 1			' some info
             stmt,
             StmtKind::SubCall {
                 fn_name: FullIdent::ident("DoSomething"),
-                args: vec![Some(Expr::int(1)), Some(Expr::int(0))],
+                // the first argument is passed by value
+                args: vec![Some(Expr::paren(Expr::int(1))), Some(Expr::int(0))],
             }
             .into()
         );
@@ -3288,14 +3385,14 @@ Const a = 1			' some info
                 args: vec![Some(
                     ExprKind::InfixOp {
                         op: T![*],
-                        lhs: Box::new(
+                        lhs: Box::new(Expr::paren(
                             ExprKind::InfixOp {
                                 op: T![+],
                                 lhs: Box::new(Expr::ident("x")),
                                 rhs: Box::new(Expr::ident("y")),
                             }
                             .into()
-                        ),
+                        )),
                         rhs: Box::new(Expr::ident("z"))
                     }
                     .into()
@@ -3320,14 +3417,14 @@ Const a = 1			' some info
                     ExprKind::InfixOp {
                         op: T![*],
                         lhs: Box::new(Expr::ident("z")),
-                        rhs: Box::new(
+                        rhs: Box::new(Expr::paren(
                             ExprKind::InfixOp {
                                 op: T![+],
                                 lhs: Box::new(Expr::ident("x")),
                                 rhs: Box::new(Expr::ident("y")),
                             }
                             .into()
-                        ),
+                        )),
                     }
                     .into()
                 )],

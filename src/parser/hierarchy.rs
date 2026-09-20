@@ -735,11 +735,12 @@ where
                         value: Box::new(value),
                     })
                 } else if self.at_new_line_or_eof() {
-                    // sub call without args
+                    // sub call without args, or with a single argument in parentheses
                     self.fail_if_using_parentheses_when_calling_sub(&ident)?;
+                    let (fn_name, argument) = self.fix_sub_ident(ident);
                     Ok(StmtKind::SubCall {
-                        fn_name: ident,
-                        args: Vec::new(),
+                        fn_name,
+                        args: argument.into_iter().map(Some).collect(),
                     })
                 } else {
                     self.fail_if_using_empty_parentheses_when_calling_sub(&ident)?;
@@ -788,18 +789,17 @@ where
         if let ExprKind::FnApplication { callee, args } = outer.node
             && let [Some(arg)] = args.as_slice()
         {
-            // What looked like the arguments is a grouped expression, the parentheses are
-            // part of it.
-            let mut arg = arg.clone();
+            // What looked like the arguments of a call is an expression in parentheses:
+            // `Foo (a)` passes `a` by value and `Foo (a) + 1` is the start of an expression.
             let after_callee = callee.span.end as usize;
             let outer_end = (outer.span.end as usize).max(after_callee);
-            if let Some(offset) = self.input[after_callee..outer_end].find('(') {
-                arg.span = Span {
-                    start: (after_callee + offset) as u32,
-                    end: outer.span.end,
-                };
-            }
-            part_of_expression = Some(arg);
+            let offset = self.input[after_callee..outer_end].find('(').unwrap_or(0);
+            let span = Span {
+                start: (after_callee + offset) as u32,
+                end: outer.span.end,
+            };
+            let paren = ExprKind::Paren(Box::new(arg.clone()));
+            part_of_expression = Some(Expr::with_span(paren, span));
             patched_ident = FullIdent::new(*callee)
         }
 
@@ -1369,13 +1369,10 @@ where
                 ExprKind::New(class_name.to_string())
             }
             T!['('] => {
-                // There is no AST node for grouped expressions.
-                // Parentheses just influence the tree structure.
                 self.consume(T!['('])?;
                 let expr = self.parse_expression(0)?;
                 self.consume(T![')'])?;
-                // the parentheses are part of the expression they group
-                return Ok(self.spanned(expr.node, start));
+                ExprKind::Paren(Box::new(expr))
             }
             kind => {
                 let token = self.peek_full()?;

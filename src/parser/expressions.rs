@@ -292,13 +292,10 @@ where
                 ExprKind::New(class_name.to_string())
             }
             T!['('] => {
-                // There is no AST node for grouped expressions.
-                // Parentheses just influence the tree structure.
                 self.consume(T!['('])?;
                 let expr = self.parse_expression(0)?;
                 self.consume(T![')'])?;
-                // the parentheses are part of the expression they group
-                return Ok(self.spanned(expr.node, start));
+                ExprKind::Paren(Box::new(expr))
             }
             op @ T![+] | op @ T![-] | op @ T![not] => {
                 self.consume(op)?;
@@ -465,14 +462,14 @@ mod test {
             expr,
             ExprKind::InfixOp {
                 op: T![*],
-                lhs: Box::new(
+                lhs: Box::new(Expr::paren(
                     ExprKind::InfixOp {
                         op: T![+],
                         lhs: Box::new(Expr::int(1)),
                         rhs: Box::new(Expr::int(2)),
                     }
                     .into()
-                ),
+                )),
                 rhs: Box::new(Expr::int(3)),
             }
             .into()
@@ -653,7 +650,7 @@ mod test {
         let expr = parse_expression(input);
         assert_eq!(
             expr,
-            Expr::fn_application(Expr::new("Foo"), vec![Expr::int(1)])
+            Expr::fn_application(Expr::paren(Expr::new("Foo")), vec![Expr::int(1)])
         );
     }
 
@@ -668,7 +665,7 @@ mod test {
                 op: T![=],
                 lhs: Box::new(
                     MemberExpression {
-                        base: Box::new(Expr::ident("foo")),
+                        base: Box::new(Expr::paren(Expr::ident("foo"))),
                         property: "enabled".to_string(),
                     }
                     .into()

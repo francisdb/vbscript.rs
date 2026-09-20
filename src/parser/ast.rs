@@ -218,6 +218,11 @@ pub enum ExprKind {
         args: Vec<Option<Expr>>,
     },
     WithScoped,
+    /// An expression in parentheses: `(a + b)`.
+    ///
+    /// The parentheses are more than grouping when they are around the single argument of
+    /// a sub call: `Foo (x)` passes `x` by value where `Foo x` passes it by reference.
+    Paren(Box<Expr>),
     MemberExpression {
         base: Box<Expr>,
         property: String,
@@ -247,6 +252,10 @@ impl Expr {
 
     pub fn new(name: impl Into<String>) -> Self {
         ExprKind::New(name.into()).into()
+    }
+
+    pub fn paren(expr: Expr) -> Self {
+        ExprKind::Paren(Box::new(expr)).into()
     }
 
     pub fn member(base: Expr, property: impl Into<String>) -> Self {
@@ -568,6 +577,16 @@ impl fmt::Display for ExprKind {
                 }
                 write!(f, ")")
             }
+            // prefix and infix operators are already written with parentheses
+            ExprKind::Paren(expr)
+                if matches!(
+                    expr.node,
+                    ExprKind::PrefixOp { .. } | ExprKind::InfixOp { .. }
+                ) =>
+            {
+                write!(f, "{expr}")
+            }
+            ExprKind::Paren(expr) => write!(f, "({expr})"),
             ExprKind::MemberExpression { base, property } => write!(f, "{base}.{property}"),
         }
     }
