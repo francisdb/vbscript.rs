@@ -103,173 +103,21 @@ pub(super) enum LogosToken {
     )]
     DateTime((usize, usize)),
 
+    // Keywords also arrive as `Ident`, there are no rules for them on purpose. The lexer
+    // that wraps this one resolves them with `keyword::keyword_kind`.
+    //
+    // As `#[token("dim", ignore(case))]` rules they made up most of the generated state
+    // machine: about 80 case-insensitive words that all overlap with the identifier rule.
+    // Without them a release build of this crate takes a third of the time and the lexer
+    // is half the machine code, for the same lexing speed.
+    //
+    // It also fits the language better: whether a word is a keyword depends on the
+    // context, `end` is a member name in `x.end`, and only the wrapping lexer knows that.
     #[regex(r#"([A-Za-z])([A-Za-z]|_|[0-9])*"#, word_callback)]
     // Escaped/bracketed identifier, e.g. `[L178 Side Flasher]`, which may contain
     // spaces and other characters that are not valid in a bare identifier.
     #[regex(r#"\[[^\]]*\]"#, word_callback)]
     Ident((usize, usize)),
-
-    // Keywords
-    #[token("and", word_callback, ignore(case))]
-    KwAnd((usize, usize)),
-    #[token("byref", word_callback, ignore(case))]
-    KwByRef((usize, usize)),
-    #[token("byval", word_callback, ignore(case))]
-    KwByVal((usize, usize)),
-    #[token("call", word_callback, ignore(case))]
-    KwCall((usize, usize)),
-    #[token("case", word_callback, ignore(case))]
-    KwCase((usize, usize)),
-    #[token("class", word_callback, ignore(case))]
-    KwClass((usize, usize)),
-    #[token("const", word_callback, ignore(case))]
-    KwConst((usize, usize)),
-    #[token("currency", word_callback, ignore(case))]
-    KwCurrency((usize, usize)),
-    #[token("default", word_callback, ignore(case))]
-    KwDefault((usize, usize)),
-    // #[token("debug", ignore(case))]
-    // KwDebug,
-    #[token("dim", word_callback, ignore(case))]
-    KwDim((usize, usize)),
-    #[token("do", word_callback, ignore(case))]
-    KwDo((usize, usize)),
-    #[token("each", word_callback, ignore(case))]
-    KwEach((usize, usize)),
-    #[token("else", word_callback, ignore(case))]
-    KwElse((usize, usize)),
-    #[token("elseif", word_callback, ignore(case))]
-    KwElseIf((usize, usize)),
-    #[token("empty", word_callback, ignore(case))]
-    KwEmpty((usize, usize)),
-    #[token("end", word_callback, ignore(case))]
-    KwEnd((usize, usize)),
-    #[token("eqv", word_callback, ignore(case))]
-    KwEqv((usize, usize)),
-    #[token("error", word_callback, ignore(case))]
-    KwError((usize, usize)),
-    #[token("event", word_callback, ignore(case))]
-    KwEvent((usize, usize)),
-    #[token("exit", word_callback, ignore(case))]
-    KwExit((usize, usize)),
-    #[token("false", word_callback, ignore(case))]
-    KwFalse((usize, usize)),
-    #[token("for", word_callback, ignore(case))]
-    KwFor((usize, usize)),
-    #[token("function", word_callback, ignore(case))]
-    KwFunction((usize, usize)),
-    #[token("get", word_callback, ignore(case))]
-    KwGet((usize, usize)),
-    #[token("goto", word_callback, ignore(case))]
-    KwGoTo((usize, usize)),
-    #[token("if", word_callback, ignore(case))]
-    KwIf((usize, usize)),
-    #[token("imp", word_callback, ignore(case))]
-    KwImp((usize, usize)),
-    #[token("implements", word_callback, ignore(case))]
-    KwImplements((usize, usize)),
-    #[token("in", word_callback, ignore(case))]
-    KwIn((usize, usize)),
-    #[token("is", word_callback, ignore(case))]
-    KwIs((usize, usize)),
-    #[token("let", word_callback, ignore(case))]
-    KwLet((usize, usize)),
-    #[token("like", word_callback, ignore(case))]
-    KwLike((usize, usize)),
-    #[token("loop", word_callback, ignore(case))]
-    KwLoop((usize, usize)),
-    #[token("lset", word_callback, ignore(case))]
-    KwLSet((usize, usize)),
-    #[token("me", word_callback, ignore(case))]
-    KwMe((usize, usize)),
-    #[token("mod", word_callback, ignore(case))]
-    KwMod((usize, usize)),
-    #[token("new", word_callback, ignore(case))]
-    KwNew((usize, usize)),
-    #[token("next", word_callback, ignore(case))]
-    KwNext((usize, usize)),
-    #[token("not", word_callback, ignore(case))]
-    KwNot((usize, usize)),
-    #[token("nothing", word_callback, ignore(case))]
-    KwNothing((usize, usize)),
-    #[token("null", word_callback, ignore(case))]
-    KwNull((usize, usize)),
-    #[token("on", word_callback, ignore(case))]
-    KwOn((usize, usize)),
-    #[token("option", word_callback, ignore(case))]
-    KwOption((usize, usize)),
-    #[token("optional", word_callback, ignore(case))]
-    KwOptional((usize, usize)),
-    #[token("or", word_callback, ignore(case))]
-    KwOr((usize, usize)),
-    #[token("paramarray", word_callback, ignore(case))]
-    KwParamArray((usize, usize)),
-    #[token("preserve", word_callback, ignore(case))]
-    KwPreserve((usize, usize)),
-    #[token("private", word_callback, ignore(case))]
-    KwPrivate((usize, usize)),
-    #[token("property", word_callback, ignore(case))]
-    KwProperty((usize, usize)),
-    #[token("public", word_callback, ignore(case))]
-    KwPublic((usize, usize)),
-    #[token("raiseevent", word_callback, ignore(case))]
-    KwRaiseEvent((usize, usize)),
-    #[token("redim", word_callback, ignore(case))]
-    KwReDim((usize, usize)),
-    #[token("resume", word_callback, ignore(case))]
-    KwResume((usize, usize)),
-    #[token("rset", word_callback, ignore(case))]
-    KwRSet((usize, usize)),
-    #[token("select", word_callback, ignore(case))]
-    KwSelect((usize, usize)),
-    #[token("set", word_callback, ignore(case))]
-    KwSet((usize, usize)),
-    #[token("shared", word_callback, ignore(case))]
-    KwShared((usize, usize)),
-    #[token("single", word_callback, ignore(case))]
-    KwSingle((usize, usize)),
-    #[token("static", word_callback, ignore(case))]
-    KwStatic((usize, usize)),
-    // In the listing I found 'step' was missing as keyword so I wonder if this
-    // should be handled in a different way.
-    #[token("step", word_callback, ignore(case))]
-    KwStep((usize, usize)),
-    #[token("sub", word_callback, ignore(case))]
-    KwSub((usize, usize)),
-    #[token("then", word_callback, ignore(case))]
-    KwThen((usize, usize)),
-    #[token("to", word_callback, ignore(case))]
-    KwTo((usize, usize)),
-    #[token("true", word_callback, ignore(case))]
-    KwTrue((usize, usize)),
-    #[token("typeof", word_callback, ignore(case))]
-    KwTypeOf((usize, usize)),
-    #[token("until", word_callback, ignore(case))]
-    KwUntil((usize, usize)),
-    #[token("variant", word_callback, ignore(case))]
-    KwVariant((usize, usize)),
-    #[token("wend", word_callback, ignore(case))]
-    KwWend((usize, usize)),
-    #[token("while", word_callback, ignore(case))]
-    KwWhile((usize, usize)),
-    #[token("with", word_callback, ignore(case))]
-    KwWith((usize, usize)),
-    #[token("xor", word_callback, ignore(case))]
-    KwXor((usize, usize)),
-    #[token("stop", word_callback, ignore(case))]
-    KwStop((usize, usize)),
-    // We can't merge this one with comment because x.rem is a valid member access
-    // and'd we ant validate that rem is not preceded by a dot unless we enable lookbehind
-    #[token("rem", word_callback, ignore(case))]
-    KwRem((usize, usize)),
-    /// Represents reserved keywords but that are not actually in use
-    /// https://isvbscriptdead.com/reserved-keywords/
-    // As, Byte, Boolean, Double, Integer, Long, Single, Stop, Variant, Type
-    #[regex(
-        r"(?i)as|byte|boolean|double|integer|long|single|variant|type",
-        word_callback
-    )]
-    KwUnused((usize, usize)),
 
     // Misc
     #[regex(r"[ \t\f]+")]
@@ -319,80 +167,6 @@ impl LogosToken {
             LParen((line, column)) => (*line, *column),
             RParen((line, column)) => (*line, *column),
             Semi((line, column)) => (*line, *column),
-            KwAnd((line, column)) => (*line, *column),
-            KwByRef((line, column)) => (*line, *column),
-            KwByVal((line, column)) => (*line, *column),
-            KwCall((line, column)) => (*line, *column),
-            KwCase((line, column)) => (*line, *column),
-            KwClass((line, column)) => (*line, *column),
-            KwConst((line, column)) => (*line, *column),
-            KwCurrency((line, column)) => (*line, *column),
-            KwDefault((line, column)) => (*line, *column),
-            KwDim((line, column)) => (*line, *column),
-            KwDo((line, column)) => (*line, *column),
-            KwEach((line, column)) => (*line, *column),
-            KwElse((line, column)) => (*line, *column),
-            KwElseIf((line, column)) => (*line, *column),
-            KwEmpty((line, column)) => (*line, *column),
-            KwEnd((line, column)) => (*line, *column),
-            KwEqv((line, column)) => (*line, *column),
-            KwError((line, column)) => (*line, *column),
-            KwEvent((line, column)) => (*line, *column),
-            KwExit((line, column)) => (*line, *column),
-            KwFalse((line, column)) => (*line, *column),
-            KwFor((line, column)) => (*line, *column),
-            KwFunction((line, column)) => (*line, *column),
-            KwGet((line, column)) => (*line, *column),
-            KwGoTo((line, column)) => (*line, *column),
-            KwIf((line, column)) => (*line, *column),
-            KwImp((line, column)) => (*line, *column),
-            KwImplements((line, column)) => (*line, *column),
-            KwIn((line, column)) => (*line, *column),
-            KwIs((line, column)) => (*line, *column),
-            KwLet((line, column)) => (*line, *column),
-            KwLike((line, column)) => (*line, *column),
-            KwLoop((line, column)) => (*line, *column),
-            KwLSet((line, column)) => (*line, *column),
-            KwMe((line, column)) => (*line, *column),
-            KwMod((line, column)) => (*line, *column),
-            KwNew((line, column)) => (*line, *column),
-            KwNext((line, column)) => (*line, *column),
-            KwNot((line, column)) => (*line, *column),
-            KwNothing((line, column)) => (*line, *column),
-            KwNull((line, column)) => (*line, *column),
-            KwOn((line, column)) => (*line, *column),
-            KwOption((line, column)) => (*line, *column),
-            KwOptional((line, column)) => (*line, *column),
-            KwOr((line, column)) => (*line, *column),
-            KwParamArray((line, column)) => (*line, *column),
-            KwPreserve((line, column)) => (*line, *column),
-            KwPrivate((line, column)) => (*line, *column),
-            KwProperty((line, column)) => (*line, *column),
-            KwPublic((line, column)) => (*line, *column),
-            KwRaiseEvent((line, column)) => (*line, *column),
-            KwReDim((line, column)) => (*line, *column),
-            KwRem((line, column)) => (*line, *column),
-            KwResume((line, column)) => (*line, *column),
-            KwRSet((line, column)) => (*line, *column),
-            KwSelect((line, column)) => (*line, *column),
-            KwSet((line, column)) => (*line, *column),
-            KwShared((line, column)) => (*line, *column),
-            KwSingle((line, column)) => (*line, *column),
-            KwStatic((line, column)) => (*line, *column),
-            KwStep((line, column)) => (*line, *column),
-            KwStop((line, column)) => (*line, *column),
-            KwSub((line, column)) => (*line, *column),
-            KwThen((line, column)) => (*line, *column),
-            KwTo((line, column)) => (*line, *column),
-            KwTrue((line, column)) => (*line, *column),
-            KwTypeOf((line, column)) => (*line, *column),
-            KwUntil((line, column)) => (*line, *column),
-            KwVariant((line, column)) => (*line, *column),
-            KwWend((line, column)) => (*line, *column),
-            KwWhile((line, column)) => (*line, *column),
-            KwWith((line, column)) => (*line, *column),
-            KwXor((line, column)) => (*line, *column),
-            KwUnused((line, column)) => (*line, *column),
             WS => (0, 0),
             Comment => (0, 0),
             LineContinuation((line, column)) => (*line, *column),
@@ -433,80 +207,6 @@ impl LogosToken {
             Float(_)     => T![real_literal],
             DateTime(_)  => T![date_time_literal],
             Ident(_)     => T![ident],
-            KwAnd(_)        => T![and],
-            KwByRef(_)      => T![byref],
-            KwByVal(_)      => T![byval],
-            KwCall(_)       => T![call],
-            KwCase(_)       => T![case],
-            KwClass(_)      => T![class],
-            KwConst(_)      => T![const],
-            KwCurrency(_)   => T![unused],
-            KwDefault(_) => T![default],
-            KwDim(_)        => T![dim],
-            KwDo(_)         => T![do],
-            KwEach(_)       => T![each],
-            KwElse(_)       => T![else],
-            KwElseIf(_)     => T![elseif],
-            KwEmpty(_)   => T![empty],
-            KwEnd(_)     => T![end],
-            KwEqv(_)        => T![eqv],
-            KwError(_)      => T![error],
-            KwEvent(_)      => T![unused],
-            KwExit(_)       => T![exit],
-            KwFalse(_)      => T![false],
-            KwFor(_)        => T![for],
-            KwFunction(_)   => T![function],
-            KwGet(_)        => T![get],
-            KwGoTo(_)       => T![goto],
-            KwIf(_)      => T![if],
-            KwImp(_)        => T![imp],
-            KwImplements(_) => T![unused],
-            KwIn(_)         => T![in],
-            KwIs(_)      => T![is],
-            KwLet(_)     => T![let],
-            KwLike(_)       => T![unused],
-            KwLoop(_)       => T![loop],
-            KwLSet(_)       => T![unused],
-            KwMe(_)      => T![me],
-            KwMod(_)     => T![mod],
-            KwNew(_)     => T![new],
-            KwNext(_)       => T![next],
-            KwNot(_)        => T![not],
-            KwNothing(_)    => T![nothing],
-            KwNull(_)       => T![null],
-            KwOn(_)         => T![on],
-            KwOption(_)     => T![option],
-            KwOptional(_)   => T![unused],
-            KwOr(_)         => T![or],
-            KwParamArray(_) => T![unused],
-            KwPreserve(_)   => T![preserve],
-            KwPrivate(_) => T![private],
-            KwProperty(_)=> T![property],
-            KwPublic(_)  => T![public],
-            KwRaiseEvent(_) => T![unused],
-            KwReDim(_)      => T![redim],
-            KwRem(_)        => unreachable!("Should never be reached as it is handled in the lexer!"),
-            KwResume(_)     => T![resume],
-            KwRSet(_)       => T![unused],
-            KwSelect(_)  => T![select],
-            KwSet(_)        => T![set],
-            KwShared(_)     => T![unused],
-            KwSingle(_)     => T![unused],
-            KwStatic(_)     => T![unused],
-            KwStep(_)    => T![step],
-            KwStop(_)    => T![stop],
-            KwSub(_)     => T![sub],
-            KwThen(_)       => T![then],
-            KwTo(_)         => T![to],
-            KwTrue(_)       => T![true],
-            KwTypeOf(_)     => T![unused],
-            KwUntil(_)      => T![until],
-            KwVariant(_)    => T![unused],
-            KwWend(_)       => T![wend],
-            KwWhile(_)      => T![while],
-            KwWith(_)       => T![with],
-            KwXor(_)        => T![xor],
-            KwUnused(_)     => T![unused],
             WS           => T![ws],
             Comment      => T![comment],
             NewLine(_)   => T![nl],
@@ -542,7 +242,8 @@ mod test {
         assert_eq!(
             token_kinds,
             [
-                T![dim],
+                // `Dim`: keywords are resolved by the lexer that wraps this one, see `Ident`
+                T![ident],
                 T![ws],
                 T![ident],
                 T![:],
