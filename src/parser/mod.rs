@@ -6,6 +6,7 @@ use std::iter::Peekable;
 pub mod ast;
 mod expressions;
 mod hierarchy;
+pub mod visit;
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct ParseError {

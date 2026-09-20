@@ -5,9 +5,8 @@ use indoc::indoc;
 use pretty_assertions::assert_eq;
 
 use vbscript::parser::Parser;
-use vbscript::parser::ast::{
-    DoLoopCheck, DoLoopCondition, Expr, ExprKind, Item, ItemKind, SetRhs, Stmt, StmtKind,
-};
+use vbscript::parser::ast::{Expr, ExprKind, Item, ItemKind, Stmt};
+use vbscript::parser::visit::{Visitor, walk_expr, walk_item, walk_items, walk_stmt};
 use vbscript::{T, lexer::*};
 
 /// walks `$tokens` and compares them to the given kinds.
@@ -1140,191 +1139,100 @@ fn try_parsing_all_vbs_files() {
         let items = parser.file().unwrap();
 
         assert!(!items.is_empty());
-        SpanCheck { input: &input }.items(&items);
+        SpanCheck::check(&input, &items);
     }
 }
 
 /// Checks that the spans of a parsed script make sense: a node is the trimmed source text it
-/// was parsed from, it lies within its parent and siblings do not overlap.
+/// was parsed from, it lies within its parent and it starts after the previous child of that
+/// parent, as the children are visited in source order.
 struct SpanCheck<'a> {
     input: &'a str,
+    /// The nodes we are in, each with the end of the child that was visited last.
+    parents: Vec<Parent>,
 }
 
-impl SpanCheck<'_> {
-    fn node(&self, span: Span, parent: Span, what: &str) {
+struct Parent {
+    span: Span,
+    previous_child_end: u32,
+    /// The properties and methods of a class are not visited in source order.
+    ordered: bool,
+}
+
+impl<'a> SpanCheck<'a> {
+    fn check(input: &'a str, items: &[Item]) {
+        let whole = Span {
+            start: 0,
+            end: input.len() as u32,
+        };
+        let mut check = SpanCheck {
+            input,
+            parents: vec![Parent {
+                span: whole,
+                previous_child_end: 0,
+                ordered: true,
+            }],
+        };
+        walk_items(&mut check, items);
+        assert_eq!(check.parents.len(), 1);
+    }
+
+    fn enter(&mut self, span: Span, what: &str, ordered: bool) {
         let text = &self.input[Range::<usize>::from(span)];
+        let parent = self.parents.last_mut().unwrap();
         assert!(
-            span.start >= parent.start && span.end <= parent.end,
-            "{what} {span:?} outside of its parent {parent:?}: {text}"
+            span.start >= parent.span.start && span.end <= parent.span.end,
+            "{what} {span:?} outside of its parent {:?}: {text}",
+            parent.span
         );
         assert!(
             !text.is_empty() && text == text.trim() && !text.ends_with(':'),
             "{what} {span:?} is not the trimmed source of a node: {text:?}"
         );
-    }
-
-    fn items(&self, items: &[Item]) {
-        let whole = Span {
-            start: 0,
-            end: self.input.len() as u32,
-        };
-        let mut previous_end = 0;
-        for item in items {
-            self.node(item.span, whole, "item");
+        if parent.ordered {
             assert!(
-                item.span.start >= previous_end,
-                "item overlaps the previous"
+                span.start >= parent.previous_child_end,
+                "{what} {span:?} overlaps the previous child of its parent: {text}"
             );
-            previous_end = item.span.end;
-            match &item.node {
-                ItemKind::Statement(stmt) => {
-                    assert_eq!(stmt.span, item.span);
-                    self.stmt(stmt, whole);
-                }
-                ItemKind::Class {
-                    member_accessors,
-                    methods,
-                    ..
-                } => {
-                    self.stmts(methods, item.span);
-                    for accessor in member_accessors {
-                        self.stmts(&accessor.body, item.span);
-                    }
-                }
-                _ => {}
-            }
+            parent.previous_child_end = span.end;
         }
+        self.parents.push(Parent {
+            span,
+            previous_child_end: span.start,
+            ordered,
+        });
     }
 
-    fn stmts(&self, stmts: &[Stmt], parent: Span) {
-        let mut previous_end = parent.start;
-        for stmt in stmts {
-            assert!(
-                stmt.span.start >= previous_end,
-                "statement overlaps the previous"
-            );
-            previous_end = stmt.span.end;
-            self.stmt(stmt, parent);
+    fn leave(&mut self) {
+        self.parents.pop();
+    }
+}
+
+impl<'ast> Visitor<'ast> for SpanCheck<'_> {
+    fn visit_item(&mut self, item: &'ast Item) {
+        if let ItemKind::Statement(stmt) = &item.node {
+            assert_eq!(stmt.span, item.span);
         }
+        let ordered = !matches!(item.node, ItemKind::Class { .. });
+        self.enter(item.span, "item", ordered);
+        walk_item(self, item);
+        self.leave();
     }
 
-    fn stmt(&self, stmt: &Stmt, parent: Span) {
-        self.node(stmt.span, parent, "statement");
-        let span = stmt.span;
-        let exprs = |exprs: &[Expr]| exprs.iter().for_each(|expr| self.expr(expr, span));
-        match &stmt.node {
-            StmtKind::Dim { vars } => vars.iter().for_each(|(_, bounds)| exprs(bounds)),
-            StmtKind::ReDim { var_bounds, .. } => {
-                var_bounds.iter().for_each(|(_, bounds)| exprs(bounds))
-            }
-            StmtKind::Set { var, rhs } => {
-                self.expr(&var.0, span);
-                if let SetRhs::Expr(expr) = rhs {
-                    self.expr(expr, span);
-                }
-            }
-            StmtKind::Assignment { full_ident, value } => {
-                self.expr(&full_ident.0, span);
-                self.expr(value, span);
-            }
-            StmtKind::IfStmt {
-                condition,
-                body,
-                elseif_statements,
-                else_stmt,
-            } => {
-                self.expr(condition, span);
-                self.stmts(body, span);
-                for (condition, body) in elseif_statements {
-                    self.expr(condition, span);
-                    self.stmts(body, span);
-                }
-                self.stmts(else_stmt.as_deref().unwrap_or_default(), span);
-            }
-            StmtKind::WhileStmt { condition, body } => {
-                self.expr(condition, span);
-                self.stmts(body, span);
-            }
-            StmtKind::ForStmt {
-                start,
-                end,
-                step,
-                body,
-                ..
-            } => {
-                self.expr(start, span);
-                self.expr(end, span);
-                if let Some(step) = step {
-                    self.expr(step, span);
-                }
-                self.stmts(body, span);
-            }
-            StmtKind::ForEachStmt { group, body, .. } => {
-                self.expr(group, span);
-                self.stmts(body, span);
-            }
-            StmtKind::DoLoop { check, body } => {
-                if let DoLoopCheck::Pre(condition) | DoLoopCheck::Post(condition) = check {
-                    let (DoLoopCondition::While(expr) | DoLoopCondition::Until(expr)) = condition;
-                    self.expr(expr, span);
-                }
-                self.stmts(body, span);
-            }
-            StmtKind::SelectCase {
-                test_expr,
-                cases,
-                else_stmt,
-            } => {
-                self.expr(test_expr, span);
-                for case in cases {
-                    exprs(&case.tests);
-                    self.stmts(&case.body, span);
-                }
-                self.stmts(else_stmt.as_deref().unwrap_or_default(), span);
-            }
-            StmtKind::SubCall { fn_name, args } => {
-                self.expr(&fn_name.0, span);
-                args.iter().flatten().for_each(|arg| self.expr(arg, span));
-            }
-            StmtKind::Call(ident) => self.expr(&ident.0, span),
-            StmtKind::With { object, body } => {
-                self.expr(&object.0, span);
-                self.stmts(body, span);
-            }
-            StmtKind::Sub { body, .. } | StmtKind::Function { body, .. } => self.stmts(body, span),
-            StmtKind::Const(_)
-            | StmtKind::Stop
-            | StmtKind::ExitDo
-            | StmtKind::ExitFor
-            | StmtKind::ExitFunction
-            | StmtKind::ExitProperty
-            | StmtKind::ExitSub
-            | StmtKind::OnError { .. } => {}
-        }
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
+        self.enter(stmt.span, "statement", true);
+        walk_stmt(self, stmt);
+        self.leave();
     }
 
-    fn expr(&self, expr: &Expr, parent: Span) {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
         if expr.node == ExprKind::WithScoped {
             // the object of the with block is implied
             assert_eq!(expr.span.start, expr.span.end);
             return;
         }
-        self.node(expr.span, parent, "expression");
-        let span = expr.span;
-        match &expr.node {
-            ExprKind::PrefixOp { expr, .. } | ExprKind::Paren(expr) => self.expr(expr, span),
-            ExprKind::InfixOp { lhs, rhs, .. } => {
-                self.expr(lhs, span);
-                self.expr(rhs, span);
-                assert!(lhs.span.end <= rhs.span.start, "operands overlap");
-            }
-            ExprKind::FnApplication { callee, args } => {
-                self.expr(callee, span);
-                args.iter().flatten().for_each(|arg| self.expr(arg, span));
-            }
-            ExprKind::MemberExpression { base, .. } => self.expr(base, span),
-            ExprKind::Literal(_) | ExprKind::Ident(_) | ExprKind::New(_) => {}
-            ExprKind::WithScoped => unreachable!(),
-        }
+        self.enter(expr.span, "expression", true);
+        walk_expr(self, expr);
+        self.leave();
     }
 }
