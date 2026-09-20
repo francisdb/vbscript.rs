@@ -846,6 +846,7 @@ Const a = 1			' some info
             ItemKind::Statement(
                 StmtKind::Function {
                     visibility: Visibility::Default,
+                    default: false,
                     name: "add".into(),
                     parameters: vec![Argument::ByRef("a".into()), Argument::ByRef("b".into())],
                     body: vec![
@@ -882,6 +883,7 @@ Const a = 1			' some info
             stmt,
             StmtKind::Sub {
                 visibility: Visibility::Default,
+                default: false,
                 name: "log".into(),
                 parameters: vec![Argument::ByRef("a".into()), Argument::ByRef("b".into())],
                 body: vec![],
@@ -926,6 +928,7 @@ Const a = 1			' some info
             stmt,
             StmtKind::Sub {
                 visibility: Visibility::Private,
+                default: false,
                 name: "log".into(),
                 parameters: vec![],
                 body: vec![],
@@ -943,6 +946,7 @@ Const a = 1			' some info
             stmt,
             StmtKind::Sub {
                 visibility: Visibility::Default,
+                default: false,
                 name: "Trigger003_hit".into(),
                 parameters: vec![],
                 body: vec![
@@ -984,6 +988,7 @@ Const a = 1			' some info
                         body: vec![
                             StmtKind::Sub {
                                 visibility: Visibility::Default,
+                                default: false,
                                 name: "inner".into(),
                                 parameters: vec![],
                                 body: vec![],
@@ -1013,6 +1018,7 @@ Const a = 1			' some info
             stmt,
             StmtKind::Sub {
                 visibility: Visibility::Default,
+                default: false,
                 name: "Trigger1_Hit".into(),
                 parameters: vec![],
                 body: vec![
@@ -1054,6 +1060,7 @@ Const a = 1			' some info
             stmt,
             StmtKind::Sub {
                 visibility: Visibility::Default,
+                default: false,
                 name: "test".into(),
                 parameters: vec![Argument::ByRef("a".into())],
                 body: vec![],
@@ -1079,6 +1086,7 @@ Const a = 1			' some info
                 ItemKind::Statement(
                     StmtKind::Sub {
                         visibility: Visibility::Default,
+                        default: false,
                         name: "test".into(),
                         parameters: vec![Argument::ByRef("a".into())],
                         body: vec![],
@@ -1089,6 +1097,7 @@ Const a = 1			' some info
                 ItemKind::Statement(
                     StmtKind::Function {
                         visibility: Visibility::Default,
+                        default: false,
                         name: "test2".into(),
                         parameters: vec![Argument::ByVal("a".into())],
                         body: vec![
@@ -3380,6 +3389,58 @@ Const a = 1			' some info
         );
     }
 
+    /// `Public Default` marks the default member of a class, which is a sub, a function or a
+    /// `Property Get`. Checked with `cscript` on Windows.
+    #[test]
+    fn test_default_member_of_a_class() {
+        let input = indoc! {"
+            Class Foo
+                Public Default Function Value()
+                End Function
+                Public Sub Other()
+                End Sub
+            End Class
+        "};
+        let items = parse_file(input);
+        let ItemKind::Class { methods, .. } = &items[0].node else {
+            panic!("expected a class")
+        };
+        let defaults: Vec<_> = methods
+            .iter()
+            .map(|method| match &method.node {
+                StmtKind::Sub { name, default, .. } | StmtKind::Function { name, default, .. } => {
+                    (name.to_string(), *default)
+                }
+                other => panic!("expected a sub or function, got {other:?}"),
+            })
+            .collect();
+        assert_eq!(
+            defaults,
+            [("Value".to_string(), true), ("Other".to_string(), false)]
+        );
+        // the span of the method starts at its visibility
+        assert!(text(input, &methods[0]).starts_with("Public Default Function"));
+
+        let result = Parser::new("Class Foo\nPublic Default Sub Run()\nEnd Sub\nEnd Class").file();
+        assert!(result.is_ok(), "{result:?}");
+    }
+
+    /// Errors 1052 and 1057 for `cscript` on Windows.
+    #[test]
+    fn test_invalid_default_members() {
+        for input in [
+            // more than one
+            "Class Foo\nPublic Default Function A()\nEnd Function\nPublic Default Function B()\nEnd Function\nEnd Class",
+            "Class Foo\nPublic Default Sub A()\nEnd Sub\nPublic Default Property Get B()\nEnd Property\nEnd Class",
+            // only a public member can be the default
+            "Class Foo\nDefault Function A()\nEnd Function\nEnd Class",
+            "Class Foo\nPrivate Default Function A()\nEnd Function\nEnd Class",
+        ] {
+            let result = Parser::new(input).file();
+            assert!(result.is_err(), "{input}: {result:?}");
+        }
+    }
+
     #[test]
     fn class_with_only_members() {
         let input = indoc! {r#"
@@ -3471,6 +3532,7 @@ Const a = 1			' some info
                     methods: vec![
                         StmtKind::Sub {
                             visibility: Visibility::Public,
+                            default: false,
                             name: "Class_Initialize".into(),
                             parameters: vec![],
                             body: vec![
@@ -3484,6 +3546,7 @@ Const a = 1			' some info
                         .into(),
                         StmtKind::Sub {
                             visibility: Visibility::Private,
+                            default: false,
                             name: "Class_Terminate".into(),
                             parameters: vec![],
                             body: vec![],
@@ -3938,6 +4001,7 @@ Const a = 1			' some info
                 ItemKind::Statement(
                     StmtKind::Function {
                         visibility: Visibility::Default,
+                        default: false,
                         name: "NullFunction".into(),
                         parameters: vec![Argument::ByRef("a".into())],
                         body: vec![],
@@ -3959,6 +4023,7 @@ Const a = 1			' some info
                 ItemKind::Statement(
                     StmtKind::Function {
                         visibility: Visibility::Default,
+                        default: false,
                         name: "NullFunction".into(),
                         parameters: vec![Argument::ByRef("a".into())],
                         body: vec![],
@@ -4262,6 +4327,7 @@ Const a = 1			' some info
                 ItemKind::Statement(
                     StmtKind::Sub {
                         visibility: Visibility::Default,
+                        default: false,
                         name: "MySub".into(),
                         parameters: vec![],
                         body: vec![
@@ -4319,6 +4385,7 @@ Const a = 1			' some info
                     methods: vec![
                         StmtKind::Sub {
                             visibility: Visibility::Default,
+                            default: false,
                             name: "Property".into(),
                             parameters: vec![Argument::ByRef("property".into())],
                             body: vec![],
@@ -4333,6 +4400,7 @@ Const a = 1			' some info
                     methods: vec![
                         StmtKind::Function {
                             visibility: Visibility::Default,
+                            default: false,
                             name: "Property".into(),
                             parameters: vec![],
                             body: vec![],

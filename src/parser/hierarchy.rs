@@ -39,13 +39,13 @@ impl Parser<'_> {
 
                 match self.peek() {
                     T![function] => {
-                        let function = self.statement_function(visibility)?;
+                        let function = self.statement_function(visibility, false)?;
                         let item = ItemKind::Statement(self.spanned(function, start));
                         self.consume_line_delimiter()?;
                         item
                     }
                     T![sub] => {
-                        let sub = self.statement_sub(visibility)?;
+                        let sub = self.statement_sub(visibility, false)?;
                         let item = ItemKind::Statement(self.spanned(sub, start));
                         self.consume_line_delimiter()?;
                         item
@@ -121,13 +121,22 @@ impl Parser<'_> {
         let mut member_accessors = Vec::new();
         let mut methods = Vec::new();
         let mut dims = Vec::new();
+        let mut has_default = false;
         while !self.at(T![end]) {
             let member_start = self.start();
             let mut default = None;
             let visibility = if self.at(T![public]) {
                 self.consume(T![public])?;
                 if self.at(T![default]) {
-                    self.consume(T![default])?;
+                    let token = self.consume(T![default])?;
+                    if has_default {
+                        return Err(ParseError::new(
+                            "A class can only have one default member",
+                            token.line,
+                            token.column,
+                        ));
+                    }
+                    has_default = true;
                     default = Some(true);
                 }
                 Visibility::Public
@@ -141,11 +150,11 @@ impl Parser<'_> {
             match self.peek() {
                 T![property] => member_accessors.push(self.class_property(default, visibility)?),
                 T![function] => {
-                    let function = self.class_function(visibility)?;
+                    let function = self.class_function(visibility, default.is_some())?;
                     methods.push(self.spanned(function, member_start));
                 }
                 T![sub] => {
-                    let sub = self.class_sub(visibility)?;
+                    let sub = self.class_sub(visibility, default.is_some())?;
                     methods.push(self.spanned(sub, member_start));
                 }
                 T![dim] => {
@@ -275,7 +284,7 @@ impl Parser<'_> {
         Ok(vars)
     }
 
-    fn class_sub(&mut self, visibility: Visibility) -> Result<StmtKind, ParseError> {
+    fn class_sub(&mut self, visibility: Visibility, default: bool) -> Result<StmtKind, ParseError> {
         self.consume(T![sub])?;
         let method_name = self.identifier("Sub name")?;
         let parameters = self.optional_declaration_parameter_list("Sub")?;
@@ -286,13 +295,18 @@ impl Parser<'_> {
         self.consume_line_delimiter()?;
         Ok(StmtKind::Sub {
             visibility,
+            default,
             name: method_name.clone(),
             parameters,
             body,
         })
     }
 
-    fn class_function(&mut self, visibility: Visibility) -> Result<StmtKind, ParseError> {
+    fn class_function(
+        &mut self,
+        visibility: Visibility,
+        default: bool,
+    ) -> Result<StmtKind, ParseError> {
         self.consume(T![function])?;
         let method_name = self.identifier("Function name")?;
         let parameters = self.optional_declaration_parameter_list("Function")?;
@@ -303,6 +317,7 @@ impl Parser<'_> {
         self.consume_line_delimiter()?;
         Ok(StmtKind::Function {
             visibility,
+            default,
             name: method_name.clone(),
             parameters,
             body,
@@ -386,7 +401,11 @@ impl Parser<'_> {
         Ok(ItemKind::OptionExplicit)
     }
 
-    fn statement_sub(&mut self, visibility: Visibility) -> Result<StmtKind, ParseError> {
+    fn statement_sub(
+        &mut self,
+        visibility: Visibility,
+        default: bool,
+    ) -> Result<StmtKind, ParseError> {
         self.consume(T![sub])?;
 
         let name = self.identifier("sub name")?;
@@ -399,13 +418,18 @@ impl Parser<'_> {
 
         Ok(StmtKind::Sub {
             visibility,
+            default,
             name,
             parameters,
             body,
         })
     }
 
-    fn statement_function(&mut self, visibility: Visibility) -> Result<StmtKind, ParseError> {
+    fn statement_function(
+        &mut self,
+        visibility: Visibility,
+        default: bool,
+    ) -> Result<StmtKind, ParseError> {
         self.consume(T![function])?;
 
         let name = self.identifier("function name")?;
@@ -421,6 +445,7 @@ impl Parser<'_> {
 
         Ok(StmtKind::Function {
             visibility,
+            default,
             name,
             parameters,
             body,
@@ -635,8 +660,8 @@ impl Parser<'_> {
             T![sub] | T![function] if self.procedure_depth > 0 => {
                 return self.fail_if_in_procedure();
             }
-            T![sub] => self.statement_sub(Visibility::Default),
-            T![function] => self.statement_function(Visibility::Default),
+            T![sub] => self.statement_sub(Visibility::Default, false),
+            T![function] => self.statement_function(Visibility::Default, false),
             T![private] | T![public] => {
                 let visibility = match self.peek() {
                     T![public] => {
@@ -653,8 +678,8 @@ impl Parser<'_> {
                     T![sub] | T![function] if self.procedure_depth > 0 => {
                         return self.fail_if_in_procedure();
                     }
-                    T![sub] => self.statement_sub(visibility),
-                    T![function] => self.statement_function(visibility),
+                    T![sub] => self.statement_sub(visibility, false),
+                    T![function] => self.statement_function(visibility, false),
                     _ => {
                         let full = self.peek_full()?;
                         return Err(ParseError::new(
