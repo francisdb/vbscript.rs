@@ -428,6 +428,9 @@ pub enum StmtKind {
     // Property Get), which the parser rejects. The same goes for a Function.
     Sub {
         visibility: Visibility,
+        /// `Public Default Sub`: what is called when an object of the class is used like a
+        /// procedure. A class can have one default member.
+        default: bool,
         name: Name,
         parameters: Vec<Argument>,
         body: Vec<Stmt>,
@@ -435,6 +438,9 @@ pub enum StmtKind {
     // https://learn.microsoft.com/en-us/previous-versions//x7hbf8fa(v=vs.85)
     Function {
         visibility: Visibility,
+        /// `Public Default Function`: what is called when an object of the class is used like
+        /// a value. A class can have one default member.
+        default: bool,
         name: Name,
         parameters: Vec<Argument>,
         body: Vec<Stmt>,
