@@ -10,15 +10,6 @@ mod keyword;
 mod line_index;
 mod token;
 
-//pub type Lexer<'input> = CustomLexer<'input>;
-/// A lexer for VBScript.
-/// This splits the input into tokens, and keeps all of it: whitespace and comments are
-/// tokens as well.
-///
-/// The end of the input is marked by a [`TokenKind::Eof`] token.
-/// Any token that is not recognized is returned as a [`TokenKind::ParseError`].
-pub type Lexer<'input> = LogosLexer<'input>;
-
 /// What separates a token from the last one that is not whitespace.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Gap {
@@ -28,7 +19,13 @@ enum Gap {
     LineContinuation,
 }
 
-pub struct LogosLexer<'input> {
+/// A lexer for VBScript.
+/// This splits the input into tokens, and keeps all of it: whitespace and comments are
+/// tokens as well.
+///
+/// The end of the input is marked by a [`TokenKind::Eof`] token.
+/// Any token that is not recognized is returned as a [`TokenKind::ParseError`].
+pub struct Lexer<'input> {
     generated: logos::SpannedIter<'input, LogosToken>,
     eof: bool,
     prev_token: Token,
@@ -41,7 +38,7 @@ pub struct LogosLexer<'input> {
     queued_token: Option<Token>,
 }
 
-impl<'input> LogosLexer<'input> {
+impl<'input> Lexer<'input> {
     pub fn new(input: &'input str) -> Self {
         Self {
             generated: LogosToken::lexer(input).spanned(),
@@ -72,7 +69,7 @@ impl<'input> LogosLexer<'input> {
     }
 }
 
-impl Iterator for LogosLexer<'_> {
+impl Iterator for Lexer<'_> {
     type Item = Token;
 
     fn next(&mut self) -> Option<Self::Item> {
