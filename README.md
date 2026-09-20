@@ -17,10 +17,6 @@ On October 2023 [Microsoft deprecated VBScript](https://learn.microsoft.com/en-u
 
 However, there are still many legacy systems that use VBScript. This project aims to provide a lexer, parser and maybe later interpreter for VBScript, so that it can be used in Rust projects.
 
-## Projects using vbscript.rs
-
-https://github.com/francisdb/vbsfmt
-
 ## Other links
 
 * The [wine](https://www.winehq.org/) project has a similar lexer/parser/interpreter in C, but it's COM based and not very easy to use as a library: https://gitlab.winehq.org/wine/wine/-/tree/master/dlls/vbscript
