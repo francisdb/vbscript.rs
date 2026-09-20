@@ -150,11 +150,11 @@ pub enum TokenKind {
     KeywordCall,
     KeywordExit,
     KeywordMe,
-    /// https://www.vbsedit.com/html/3ff21ea0-54e5-4f95-9c77-7f2d02977463.asp
+    /// <https://www.vbsedit.com/html/3ff21ea0-54e5-4f95-9c77-7f2d02977463.asp>
     /// The Stop statement suspends execution, similar to setting a breakpoint in the code.
     KeywordStop,
     /// Any keywords that are reserved but not used, like "As"
-    /// see https://docs.microsoft.com/en-us/dotnet/visual-basic/language-reference/keywords/reserved-keywords
+    /// see <https://docs.microsoft.com/en-us/dotnet/visual-basic/language-reference/keywords/reserved-keywords>
     KeywordUnused,
     //Special values
     Empty,

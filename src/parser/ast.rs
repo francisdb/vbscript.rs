@@ -524,7 +524,7 @@ pub enum ItemKind {
     /// This is a script-level variable that has visibility
     /// e.g. `Public a, b, c` or `Private a, b, c`
     /// note: `Public a()` is a dynamic array and not the same as `Public a`
-    /// https://stackoverflow.com/a/23911728/42198
+    /// <https://stackoverflow.com/a/23911728/42198>
     Variable {
         visibility: Visibility,
         vars: Vec<VarDecl>,
