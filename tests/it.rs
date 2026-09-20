@@ -1311,7 +1311,7 @@ impl SpanCheck<'_> {
         self.node(expr.span, parent, "expression");
         let span = expr.span;
         match &expr.node {
-            ExprKind::PrefixOp { expr, .. } => self.expr(expr, span),
+            ExprKind::PrefixOp { expr, .. } | ExprKind::Paren(expr) => self.expr(expr, span),
             ExprKind::InfixOp { lhs, rhs, .. } => {
                 self.expr(lhs, span);
                 self.expr(rhs, span);
