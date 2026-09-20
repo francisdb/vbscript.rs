@@ -25,21 +25,12 @@ fn word_callback(lex: &mut Lexer<LogosToken>) -> (usize, usize) {
 #[derive(Logos, Debug, PartialEq, Eq)]
 #[logos(extras = (usize, usize))]
 pub(super) enum LogosToken {
-    // On windows VBScript a property access can not have whitespace between the ident and the dot.
-    // However, after the dot there can be whitespace before the next ident.
-    // Mind that this also accepts parentheses for these cases:
-    // * `MyFunc().`
-    // * `(ident).`
-    // Since we try to not enable lookahead/behind we take the opposite logic
-    // and match dots prefixed with whitespace (but not newline)
-    // Give lower priority to this rule as it might interfere with floats defined as `.123`
-    // TODO can we fix this? Currently WS already consumes all the whitespace so there is no way to
-    //   so this rule is never hit in the lexer.
-    // #[regex(r"[ \t]+\.", word_callback)]
-    // Dot((usize, usize)),
+    // A property access can not have whitespace between the name and the dot, but it can
+    // after the dot. Which of the two a dot is depends on the token before it, which the
+    // lexer that wraps this one looks at: it turns this `Dot` into a `_.` for a property
+    // access and leaves it as the dot of a with block otherwise.
     #[token(".", word_callback)]
     Dot((usize, usize)),
-    // DotSuffix((usize, usize)),
     #[token(":", word_callback)]
     Colon((usize, usize)),
     #[token(",", word_callback)]
@@ -127,8 +118,8 @@ pub(super) enum LogosToken {
     WS,
     #[regex(r"(\r\n?|\n)", newline_callback)]
     NewLine((usize, usize)),
-    // TODO to be 100% correct we should also capture a line
-    //   with only _ (and trailing whitespace + newline) as a line continuation
+    // A line with only a `_` is a line continuation as well, there is nothing to do for
+    // that: the whitespace before it is its own token.
     // (\r\n?|\n) matches \r\n, \r, and \n
     #[regex(r"_[ \t\f]*(\r\n?|\n)", newline_callback)]
     LineContinuation((usize, usize)),
@@ -143,7 +134,6 @@ impl LogosToken {
         use LogosToken::*;
         let line_col = match self {
             Dot((line, column)) => (*line, *column),
-            //DotSuffix((line, column)) => (*line, *column),
             NewLine((line, column)) => (*line, *column),
             Ampersand((line, column)) => (*line, *column),
             Colon((line, column)) => (*line, *column),
@@ -184,7 +174,6 @@ impl LogosToken {
         use LogosToken::*;
         match self {
             Dot(_)          => T![.],
-            //DotSuffix(_)    => T![_.],
             Colon(_)        => T![:],
             Comma(_)        => T![,],
             Semi(_)         => T![;],

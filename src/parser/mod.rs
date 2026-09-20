@@ -3671,12 +3671,39 @@ Const a = 1			' some info
     }
 
     #[test]
-    #[should_panic = "Expected end of statement"]
     fn test_statement_expected_end() {
         // Windows: compilation error: Expected end of statement
-        // TODO make these tests pass
-        let input = "DoSomething(),0";
-        parse_stmt(input, true);
+        let error = Parser::new("DoSomething(),0").file().unwrap_err();
+        assert!(
+            error.message().contains("Expected end of statement"),
+            "{error}"
+        );
+        assert_eq!((error.line(), error.column()), (1, 14));
+    }
+
+    /// All valid for `cscript` on Windows, but for the last one.
+    #[test]
+    fn test_call_statement_forms() {
+        for input in [
+            "Call Foo",
+            "Call Foo()",
+            "Call Foo(1)",
+            "Call o.Foo",
+            "Call o.Foo(1, 2)",
+        ] {
+            let result = Parser::new(input).file();
+            assert!(result.is_ok(), "{input}: {result:?}");
+        }
+        assert!(Parser::new("Call Foo 1").file().is_err());
+    }
+
+    /// A line with only a `_` continues the line as well.
+    #[test]
+    fn test_line_with_only_a_line_continuation() {
+        let expected = parse_file("x = 1 + 2");
+        for input in ["x = 1 + _\n_\n2", "x = 1 + _\n   _  \n2", "_\nx = 1 + 2"] {
+            assert_eq!(parse_file(input), expected, "{input:?}");
+        }
     }
 
     #[test]

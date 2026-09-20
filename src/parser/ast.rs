@@ -430,7 +430,6 @@ pub enum StmtKind {
     Sub {
         visibility: Visibility,
         name: Name,
-        // TODO handle ByVal and ByRef
         parameters: Vec<Argument>,
         body: Vec<Stmt>,
     },

@@ -790,8 +790,8 @@ where
     fn statement_call(&mut self) -> Result<StmtKind, ParseError> {
         self.consume(T![call])?;
         let ident = self.ident_deep()?;
-        // TODO if there are no args the parens should be omitted
-        //   to validate on windows
+        // `Call Foo`, `Call Foo()` and `Call Foo(1)` are all valid for `cscript` on Windows,
+        // `Call Foo 1` is not
         Ok(StmtKind::Call(ident))
     }
 
