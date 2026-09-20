@@ -11,11 +11,12 @@ mod line_index;
 mod token;
 
 //pub type Lexer<'input> = CustomLexer<'input>;
-/// A lexer for the VBA language.
-/// This splits the input into tokens.
+/// A lexer for VBScript.
+/// This splits the input into tokens, and keeps all of it: whitespace and comments are
+/// tokens as well.
 ///
-/// The end of the input is marked by a `TokenKind::EOF` token.
-/// Any token that is not recognized is returned as a `TokenKind::ParseError`.
+/// The end of the input is marked by a [`TokenKind::Eof`] token.
+/// Any token that is not recognized is returned as a [`TokenKind::ParseError`].
 pub type Lexer<'input> = LogosLexer<'input>;
 
 pub struct LogosLexer<'input> {

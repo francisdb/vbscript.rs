@@ -8,6 +8,10 @@ mod expressions;
 mod hierarchy;
 pub mod visit;
 
+/// Why a script could not be parsed, and where.
+///
+/// The line and the column start at 1, 0 stands for unknown. The column counts bytes, like
+/// the one of a [`Token`].
 #[derive(Clone, PartialEq, Eq)]
 pub struct ParseError {
     message: String,
@@ -72,6 +76,11 @@ impl Debug for ParseError {
 /// deepest nesting in the test corpus is 26.
 const MAX_NESTING_DEPTH: usize = 128;
 
+/// A parser for VBScript, see the [documentation of the crate](crate) for an example.
+///
+/// [`file`](Parser::file) parses a whole script. The other public functions parse a part of
+/// one, like a single [`statement`](Parser::statement) or
+/// [`expression`](Parser::expression), from where the parser is in the input.
 pub struct Parser<'input, I>
 where
     I: Iterator<Item = Token>,
@@ -87,6 +96,7 @@ where
 }
 
 impl<'input> Parser<'input, TokenIter<'input>> {
+    /// A parser for a script, or for a part of one.
     pub fn new(input: &'input str) -> Parser<'input, TokenIter<'input>> {
         Parser {
             input,
