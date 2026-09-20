@@ -1520,6 +1520,24 @@ Const a = 1			' some info
     }
 
     #[test]
+    fn test_with_new_object() {
+        let input = indoc! {"
+            With New Foo
+                .bar = 1
+            End With
+        "};
+        let items = parse_file(input);
+        let ItemKind::Statement(stmt) = &items[0].node else {
+            panic!("expected a statement")
+        };
+        let StmtKind::With { object, .. } = &stmt.node else {
+            panic!("expected a with statement")
+        };
+        assert_eq!(*object.0, Expr::new("Foo"));
+        assert_eq!(text(input, &object.0), "New Foo");
+    }
+
+    #[test]
     fn test_single_line_if() {
         let input = r#"If Err Then MsgBox "Oh noes""#;
         let stmt = parse_stmt(input, true);
