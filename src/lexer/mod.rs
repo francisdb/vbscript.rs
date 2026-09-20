@@ -118,12 +118,13 @@ impl Iterator for LogosLexer<'_> {
                                 }
                             }
                         }
-                        // queue the newline token
+                        // queue the newline token, which has its own position
+                        let (nl_line, nl_column) = current_token.line_column();
                         self.queued_token = Some(Token {
                             kind: T![nl],
                             span: (current_span.start..current_span.end).into(),
-                            line: rem_line,
-                            column: rem_column,
+                            line: nl_line,
+                            column: nl_column,
                         });
                         // return the comment
                         let comment_span = rem_span.start..current_span.start;
@@ -363,6 +364,27 @@ mod test {
         assert_eq!(
             kinds("o.end end"),
             [T![ident], T![_.], T![ident], T![end], T![EOF]]
+        );
+    }
+
+    /// A line end is on the line that it ends, at the column where it starts.
+    #[test]
+    fn position_of_line_ends() {
+        let input = "ab\r\nx = 1 + _\n  2 Rem note\n";
+        let tokens = Lexer::new(input).tokenize();
+        let line_ends: Vec<_> = tokens
+            .iter()
+            .filter(|t| matches!(t.kind, T![nl] | T![line_continuation]))
+            .map(|t| (t.kind, t.line, t.column))
+            .collect();
+        assert_eq!(
+            line_ends,
+            [
+                (T![nl], 1, 3),
+                (T![line_continuation], 2, 9),
+                // after a comment that starts with `rem`
+                (T![nl], 3, 13),
+            ]
         );
     }
 

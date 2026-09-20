@@ -4,10 +4,13 @@ use logos::{Lexer, Logos};
 
 /* ANCHOR: callbacks */
 /// Update the line count and the char index.
+///
+/// Gives the position of the line end itself, which is on the line that it ends.
 fn newline_callback(lex: &mut Lexer<LogosToken>) -> (usize, usize) {
+    let position = word_callback(lex);
     lex.extras.0 += 1;
     lex.extras.1 = lex.span().end;
-    (lex.extras.0, lex.extras.1)
+    position
 }
 
 /// Compute the line and column position for the current word.
@@ -141,7 +144,7 @@ impl LogosToken {
         let line_col = match self {
             Dot((line, column)) => (*line, *column),
             //DotSuffix((line, column)) => (*line, *column),
-            NewLine((line, _)) => (*line, 0),
+            NewLine((line, column)) => (*line, *column),
             Ampersand((line, column)) => (*line, *column),
             Colon((line, column)) => (*line, *column),
             Comma((line, column)) => (*line, *column),

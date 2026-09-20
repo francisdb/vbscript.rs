@@ -1171,10 +1171,6 @@ fn line_index_agrees_with_the_lexer_on_all_vbs_files() {
         };
         let index = LineIndex::new(&input);
         for token in Lexer::new(&input) {
-            // the lexer puts a line end on the line that follows it
-            if matches!(token.kind, T![nl] | T![line_continuation] | T![EOF]) {
-                continue;
-            }
             let (line, column) = index.line_column(token.span.start);
             let line_start = token.span.start as usize - (token.column - 1);
             if !input[line_start..token.span.start as usize].is_ascii() {
