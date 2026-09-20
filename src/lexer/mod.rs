@@ -19,12 +19,25 @@ mod token;
 /// Any token that is not recognized is returned as a [`TokenKind::ParseError`].
 pub type Lexer<'input> = LogosLexer<'input>;
 
+/// What separates a token from the last one that is not whitespace.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Gap {
+    None,
+    Whitespace,
+    /// A line continuation, with or without whitespace around it.
+    LineContinuation,
+}
+
 pub struct LogosLexer<'input> {
     generated: logos::SpannedIter<'input, LogosToken>,
     eof: bool,
     prev_token: Token,
     /// The last token was a dot, not counting whitespace and line continuations.
     after_dot: bool,
+    /// The last token that is not whitespace or a line continuation.
+    last_code_kind: TokenKind,
+    /// What is between that token and the current one.
+    gap: Gap,
     queued_token: Option<Token>,
 }
 
@@ -40,6 +53,8 @@ impl<'input> LogosLexer<'input> {
                 column: 1,
             },
             after_dot: false,
+            last_code_kind: T![nl],
+            gap: Gap::None,
             queued_token: None,
         }
     }
@@ -63,6 +78,8 @@ impl Iterator for LogosLexer<'_> {
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(token) = self.queued_token.take() {
             self.queued_token = None;
+            self.last_code_kind = token.kind;
+            self.gap = Gap::None;
             return Some(token);
         }
         match self.generated.next() {
@@ -143,24 +160,17 @@ impl Iterator for LogosLexer<'_> {
                         _ => current_token.line_column(),
                     };
 
-                    // translate [non-whitepace, .] to [non-whitepace, _.]
-                    // without lookahead/back on the lexer we can't do this kind of check
-                    // TODO would it not be better to do a positive check here checking for valid cases?
-                    // A dot directly after `Then` or `Else` (`If x Then.prop = 1`) is a
-                    // with-statement dot, not a member access on the keyword.
-                    if !matches!(
-                        self.prev_token.kind,
-                        T![nl]
-                            | T![ws]
-                            | T![:]
-                            | T!['(']
-                            | T![-]
-                            | T![,]
-                            | T![&]
-                            | T![then]
-                            | T![else]
-                    ) && matches!(current_kind, T![.])
-                    {
+                    // A dot is a member access, `_.`, right after what can have members: a
+                    // name, a `)`, `Me` or a string. After anything else it is the dot of a with
+                    // block: `x =.prop`, `a And.prop`, `If x Then.prop = 1`. Whitespace before
+                    // the dot makes it one too, `Foo .prop` calls `Foo`, but a line
+                    // continuation does not. This is the rule of the wine lexer, checked with
+                    // `cscript` on Windows.
+                    let has_members = matches!(
+                        self.last_code_kind,
+                        T![ident] | T![')'] | T![me] | T![string_literal]
+                    );
+                    if matches!(current_kind, T![.]) && has_members && self.gap != Gap::Whitespace {
                         let replacement_token = Token {
                             kind: T![_.],
                             span: span.into(),
@@ -169,6 +179,8 @@ impl Iterator for LogosLexer<'_> {
                         };
                         self.prev_token = replacement_token;
                         self.after_dot = true;
+                        self.last_code_kind = T![_.];
+                        self.gap = Gap::None;
                         return Some(replacement_token);
                     }
                     let token = Token {
@@ -184,10 +196,21 @@ impl Iterator for LogosLexer<'_> {
                         T![ws] | T![line_continuation] => after_dot,
                         _ => false,
                     };
+                    match current_kind {
+                        T![line_continuation] => self.gap = Gap::LineContinuation,
+                        T![ws] if self.gap == Gap::None => self.gap = Gap::Whitespace,
+                        T![ws] => {}
+                        kind => {
+                            self.last_code_kind = kind;
+                            self.gap = Gap::None;
+                        }
+                    }
                     Some(token)
                 }
                 Err(_) => {
                     let (line, column) = self.line_column(span.start);
+                    self.last_code_kind = TokenKind::ParseError;
+                    self.gap = Gap::None;
                     Some(Token {
                         kind: TokenKind::ParseError,
                         span: span.into(),
