@@ -1934,6 +1934,15 @@ Const a = 1			' some info
     }
 
     #[test]
+    fn test_error_at_a_line_end_is_on_that_line() {
+        // the expression is cut off by the end of line 2
+        let error = Parser::new("Dim total\ntotal = 1 +\nMsgBox total\n")
+            .file()
+            .unwrap_err();
+        assert_eq!((error.line(), error.column()), (2, 12), "{error}");
+    }
+
+    #[test]
     fn test_single_line_if() {
         let input = r#"If Err Then MsgBox "Oh noes""#;
         let stmt = parse_stmt(input, true);
