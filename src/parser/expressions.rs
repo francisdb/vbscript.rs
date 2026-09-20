@@ -178,11 +178,6 @@ where
         }
     }
 
-    /// Parse a literal if there is one next, `None` if there is none or if it is invalid.
-    pub fn parse_literal(&mut self) -> Option<Lit> {
-        self.literal().ok().flatten()
-    }
-
     /// Parse a literal if there is one next, fails if it is not a valid one.
     pub(crate) fn literal(&mut self) -> Result<Option<Lit>, ParseError> {
         let literal = match self.peek() {
