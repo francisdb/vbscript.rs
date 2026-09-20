@@ -463,10 +463,35 @@ pub enum Visibility {
 #[derive(Debug, Clone, PartialEq)]
 pub struct MemberDefinitions {
     pub visibility: Visibility,
-    pub properties: Vec<(String, Option<Vec<usize>>)>,
+    pub properties: Vec<VarDecl>,
 }
 
-pub type ClassDim = Vec<(String, Option<Vec<usize>>)>;
+/// A variable that is declared in a class or, with a visibility, at script level.
+#[derive(Debug, Clone, PartialEq)]
+pub struct VarDecl {
+    pub name: String,
+    /// `None` for a plain variable like `a`, the constant upper bounds for an array:
+    /// `a(1, 2)`, which are empty for a dynamic array `a()`.
+    pub bounds: Option<Vec<usize>>,
+}
+
+impl VarDecl {
+    /// A plain variable.
+    pub fn new(name: impl Into<String>) -> Self {
+        VarDecl {
+            name: name.into(),
+            bounds: None,
+        }
+    }
+
+    /// An array, dynamic if there are no bounds.
+    pub fn array(name: impl Into<String>, bounds: Vec<usize>) -> Self {
+        VarDecl {
+            name: name.into(),
+            bounds: Some(bounds),
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ItemKind {
@@ -476,7 +501,8 @@ pub enum ItemKind {
     Class {
         name: String,
         members: Vec<MemberDefinitions>,
-        dims: Vec<ClassDim>,
+        /// The variables of each `Dim` in the class
+        dims: Vec<Vec<VarDecl>>,
         member_accessors: Vec<MemberAccess>,
         methods: Vec<Stmt>, // expect only functions and subs
     },
@@ -492,7 +518,7 @@ pub enum ItemKind {
     /// https://stackoverflow.com/a/23911728/42198
     Variable {
         visibility: Visibility,
-        vars: Vec<(String, Option<Vec<usize>>)>,
+        vars: Vec<VarDecl>,
     },
     Statement(Stmt),
 }
