@@ -1864,6 +1864,32 @@ Const a = 1			' some info
         assert_eq!(text(input, &member_accessors[0].args[0].0), "v");
     }
 
+    /// These are reserved for `cscript` on Windows but can be the name of a member.
+    #[test]
+    fn test_endif_and_enum_are_reserved() {
+        for word in ["endif", "enum", "EndIf", "Enum"] {
+            for input in [
+                format!("Dim {word}"),
+                format!("Sub {word}()\nEnd Sub"),
+                format!("x = {word}"),
+            ] {
+                let result = Parser::new(&input).file();
+                assert!(result.is_err(), "{input}: {result:?}");
+            }
+            let input = format!("o.{word} = 1\nx = o.{word}");
+            let result = Parser::new(&input).file();
+            assert!(result.is_ok(), "{input}: {result:?}");
+        }
+    }
+
+    #[test]
+    fn test_dim_without_variables() {
+        for input in ["Dim", "Dim ' nothing", "Dim rem", "Sub Foo()\nDim\nEnd Sub"] {
+            let result = Parser::new(input).file();
+            assert!(result.is_err(), "{input}: {result:?}");
+        }
+    }
+
     #[test]
     fn test_single_line_if() {
         let input = r#"If Err Then MsgBox "Oh noes""#;

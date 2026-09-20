@@ -298,6 +298,8 @@ mod test {
     fn reserved_words_without_own_token_kind() {
         for word in [
             "currency",
+            "endif",
+            "enum",
             "event",
             "implements",
             "like",

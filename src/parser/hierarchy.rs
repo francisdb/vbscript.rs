@@ -841,6 +841,15 @@ where
                 break;
             }
         }
+        if vars.is_empty() {
+            // `Dim rem` as well, where the `rem` starts a comment
+            let peek = self.peek_full()?;
+            return Err(ParseError::new(
+                "Expected the name of a variable after `dim`",
+                peek.line,
+                peek.column,
+            ));
+        }
         Ok(StmtKind::Dim { vars })
     }
 
