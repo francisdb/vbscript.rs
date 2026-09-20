@@ -1100,9 +1100,9 @@ fn test_scripts() -> impl Iterator<Item = PathBuf> {
         .unwrap()
         .filter_map(Result::ok)
         .filter(|p| {
-            !EXCLUDED_FILES
-                .iter()
-                .any(|f| p.to_str().unwrap().contains(f))
+            // the excluded files are written with a `/`, also for windows
+            let path = p.to_str().unwrap().replace('\\', "/");
+            !EXCLUDED_FILES.iter().any(|f| path.contains(f))
         })
         .collect();
     assert!(

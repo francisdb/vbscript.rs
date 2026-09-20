@@ -38,6 +38,8 @@ for repo in "${repos[@]}"; do
   echo "Fetching $repo_dir at $sha"
   rm -rf "$repo_dir"
   git init -q "$repo_dir"
+  # some scripts have a path of over 260 characters, which windows needs this for
+  git -C "$repo_dir" config core.longpaths true
   git -C "$repo_dir" remote add origin "$url"
   git -C "$repo_dir" sparse-checkout set --no-cone "$pattern"
   git -C "$repo_dir" fetch -q --depth 1 --filter=tree:0 origin "$sha"
