@@ -1932,6 +1932,60 @@ Const a = 1			' some info
         assert_eq!(text(input, &member_accessors[0].args[0].0), "v");
     }
 
+    #[test]
+    fn test_span_of_cases_and_properties() {
+        let input = indoc! {"
+            Select Case x
+                Case 1, 2 ' small
+                    a = 1
+                    b = 2
+                Case 3 : c = 3
+                Case Else
+                    d = 4
+            End Select
+            Class Foo
+                Public Default Property Get Value()
+                    Value = 1
+                End Property   ' done
+                Private v
+                Property Let Value(n)
+                End Property
+            End Class
+        "};
+        let items = parse_file(input);
+        let ItemKind::Statement(select) = &items[0].node else {
+            panic!("expected a statement")
+        };
+        let StmtKind::SelectCase { cases, .. } = &select.node else {
+            panic!("expected a select case")
+        };
+        let cases: Vec<_> = cases.iter().map(|case| text(input, case)).collect();
+        assert_eq!(
+            cases,
+            [
+                "Case 1, 2 ' small\n        a = 1\n        b = 2",
+                "Case 3 : c = 3"
+            ]
+        );
+        let ItemKind::Class {
+            member_accessors, ..
+        } = &items[1].node
+        else {
+            panic!("expected a class")
+        };
+        let properties: Vec<_> = member_accessors
+            .iter()
+            .map(|property| text(input, property))
+            .collect();
+        assert_eq!(
+            properties,
+            [
+                "Public Default Property Get Value()\n        Value = 1\n    End Property",
+                "Property Let Value(n)\n    End Property"
+            ]
+        );
+    }
+
     /// These are reserved for `cscript` on Windows but can be the name of a member.
     #[test]
     fn test_endif_and_enum_are_reserved() {
@@ -3069,7 +3123,8 @@ Const a = 1			' some info
                                     }
                                     .into()
                                 ]
-                            },
+                            }
+                            .into(),
                             Case {
                                 tests: vec![Expr::int(3),],
                                 body: vec![
@@ -3079,7 +3134,8 @@ Const a = 1			' some info
                                     }
                                     .into()
                                 ]
-                            },
+                            }
+                            .into(),
                         ],
                         else_stmt: Some(vec![
                             StmtKind::Assignment {
@@ -3144,7 +3200,8 @@ Const a = 1			' some info
                                     }
                                     .into()
                                 ]
-                            },
+                            }
+                            .into(),
                             Case {
                                 tests: vec![
                                     InfixOp {
@@ -3168,6 +3225,7 @@ Const a = 1			' some info
                                     .into()
                                 ]
                             }
+                            .into()
                         ],
                         else_stmt: None,
                     }
@@ -3193,16 +3251,19 @@ Const a = 1			' some info
                 ItemKind::Statement(
                     StmtKind::SelectCase {
                         test_expr: Box::new(Expr::ident("x")),
-                        cases: vec![Case {
-                            tests: vec![Expr::int(1), Expr::int(2),],
-                            body: vec![
-                                StmtKind::Assignment {
-                                    full_ident: FullIdent::ident("y"),
-                                    value: Box::new(Expr::int(2)),
-                                }
-                                .into()
-                            ]
-                        },],
+                        cases: vec![
+                            Case {
+                                tests: vec![Expr::int(1), Expr::int(2),],
+                                body: vec![
+                                    StmtKind::Assignment {
+                                        full_ident: FullIdent::ident("y"),
+                                        value: Box::new(Expr::int(2)),
+                                    }
+                                    .into()
+                                ]
+                            }
+                            .into(),
+                        ],
                         else_stmt: Some(vec![
                             StmtKind::Assignment {
                                 full_ident: FullIdent::ident("y"),
@@ -3249,7 +3310,8 @@ Const a = 1			' some info
                                     }
                                     .into()
                                 ],
-                            },
+                            }
+                            .into(),
                             Case {
                                 tests: vec![Expr::int(82),],
                                 body: vec![
@@ -3262,7 +3324,8 @@ Const a = 1			' some info
                                     }
                                     .into()
                                 ]
-                            },
+                            }
+                            .into(),
                         ],
                         else_stmt: Some(vec![
                             StmtKind::SubCall {
@@ -3294,16 +3357,19 @@ Const a = 1			' some info
                 ItemKind::Statement(
                     StmtKind::SelectCase {
                         test_expr: Box::new(Expr::ident("serviceLevel")),
-                        cases: vec![Case {
-                            tests: vec![Expr::ident("kMenuTop"), Expr::ident("kMenuNone"),],
-                            body: vec![
-                                StmtKind::Assignment {
-                                    full_ident: FullIdent::ident("bInService"),
-                                    value: Box::new(ExprKind::Literal(Lit::Bool(false)).into()),
-                                }
-                                .into()
-                            ]
-                        },],
+                        cases: vec![
+                            Case {
+                                tests: vec![Expr::ident("kMenuTop"), Expr::ident("kMenuNone"),],
+                                body: vec![
+                                    StmtKind::Assignment {
+                                        full_ident: FullIdent::ident("bInService"),
+                                        value: Box::new(ExprKind::Literal(Lit::Bool(false)).into()),
+                                    }
+                                    .into()
+                                ]
+                            }
+                            .into(),
+                        ],
                         else_stmt: None,
                     }
                     .into()
@@ -3375,13 +3441,16 @@ Const a = 1			' some info
                     name: "NullFadingObject".into(),
                     members: vec![],
                     dims: vec![],
-                    member_accessors: vec![MemberAccess {
-                        name: "IntensityScale".into(),
-                        visibility: PropertyVisibility::Public { default: false },
-                        property_type: PropertyType::Let,
-                        args: vec![("input".into(), ArgumentType::ByRef),],
-                        body: vec![],
-                    }],
+                    member_accessors: vec![
+                        MemberAccess {
+                            name: "IntensityScale".into(),
+                            visibility: PropertyVisibility::Public { default: false },
+                            property_type: PropertyType::Let,
+                            args: vec![("input".into(), ArgumentType::ByRef),],
+                            body: vec![],
+                        }
+                        .into()
+                    ],
                     methods: vec![],
                 }
                 .into()

@@ -32,8 +32,8 @@
 //! ```
 
 use crate::parser::ast::{
-    DoLoopCheck, DoLoopCondition, Expr, ExprKind, Item, ItemKind, MemberAccess, SetRhs, Stmt,
-    StmtKind,
+    Case, DoLoopCheck, DoLoopCondition, Expr, ExprKind, Item, ItemKind, MemberAccess, SetRhs,
+    Spanned, Stmt, StmtKind,
 };
 
 /// Visits the nodes of a syntax tree, see the [module documentation](self).
@@ -45,8 +45,14 @@ pub trait Visitor<'ast> {
     }
 
     /// A `Property Get`, `Let` or `Set` of a class.
-    fn visit_member_access(&mut self, member_access: &'ast MemberAccess) {
+    fn visit_member_access(&mut self, member_access: &'ast Spanned<MemberAccess>) {
         walk_member_access(self, member_access);
+    }
+
+    /// A `Case` of a `Select Case`, with the values it is for and its statements. The
+    /// statements of a `Case Else` are visited as statements of the `Select Case`.
+    fn visit_case(&mut self, case: &'ast Spanned<Case>) {
+        walk_case(self, case);
     }
 
     fn visit_stmt(&mut self, stmt: &'ast Stmt) {
@@ -90,9 +96,15 @@ pub fn walk_item<'ast, V: Visitor<'ast> + ?Sized>(visitor: &mut V, item: &'ast I
 /// Visits the statements of the body of a property.
 pub fn walk_member_access<'ast, V: Visitor<'ast> + ?Sized>(
     visitor: &mut V,
-    member_access: &'ast MemberAccess,
+    member_access: &'ast Spanned<MemberAccess>,
 ) {
     walk_stmts(visitor, &member_access.body);
+}
+
+/// Visits the values a case is for, then its statements.
+pub fn walk_case<'ast, V: Visitor<'ast> + ?Sized>(visitor: &mut V, case: &'ast Spanned<Case>) {
+    walk_exprs(visitor, &case.tests);
+    walk_stmts(visitor, &case.body);
 }
 
 pub fn walk_stmts<'ast, V: Visitor<'ast> + ?Sized>(visitor: &mut V, stmts: &'ast [Stmt]) {
@@ -180,8 +192,7 @@ pub fn walk_stmt<'ast, V: Visitor<'ast> + ?Sized>(visitor: &mut V, stmt: &'ast S
         } => {
             visitor.visit_expr(test_expr);
             for case in cases {
-                walk_exprs(visitor, &case.tests);
-                walk_stmts(visitor, &case.body);
+                visitor.visit_case(case);
             }
             if let Some(body) = else_stmt {
                 walk_stmts(visitor, body);
@@ -379,6 +390,27 @@ mod test {
                 "<script>: Four"
             ]
         );
+    }
+
+    #[test]
+    fn visits_the_cases_of_a_select_case() {
+        /// How many values each case is for.
+        #[derive(Default)]
+        struct Cases(Vec<usize>);
+
+        impl<'ast> Visitor<'ast> for Cases {
+            fn visit_case(&mut self, case: &'ast Spanned<Case>) {
+                self.0.push(case.tests.len());
+                walk_case(self, case);
+            }
+        }
+
+        let input = "Select Case x\nCase 1, 2\nCase 3\nSelect Case y\nCase 4, 5, 6\nEnd Select\nCase Else\nEnd Select\n";
+        let items = Parser::new(input).file().unwrap();
+        let mut cases = Cases::default();
+        walk_items(&mut cases, &items);
+        // the case of the nested select case is visited as part of the second case
+        assert_eq!(cases.0, [2, 1, 3]);
     }
 
     #[test]

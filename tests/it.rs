@@ -6,10 +6,10 @@ use pretty_assertions::assert_eq;
 
 use vbscript::parser::Parser;
 use vbscript::parser::ast::{
-    Argument, Expr, ExprKind, Item, ItemKind, MemberAccess, Name, Stmt, StmtKind,
+    Argument, Case, Expr, ExprKind, Item, ItemKind, MemberAccess, Name, Spanned, Stmt, StmtKind,
 };
 use vbscript::parser::visit::{
-    Visitor, walk_expr, walk_item, walk_items, walk_member_access, walk_stmt,
+    Visitor, walk_case, walk_expr, walk_item, walk_items, walk_member_access, walk_stmt,
 };
 use vbscript::{T, lexer::*};
 
@@ -1298,14 +1298,22 @@ impl<'ast> Visitor<'ast> for SpanCheck<'_> {
         self.leave();
     }
 
-    fn visit_member_access(&mut self, member_access: &'ast MemberAccess) {
-        // a property has no span of its own, its names are within the class
+    fn visit_member_access(&mut self, member_access: &'ast Spanned<MemberAccess>) {
+        // the properties of a class are visited before its methods, not in source order
+        self.enter(member_access.span, "property", false);
         self.name(&member_access.name);
         member_access
             .args
             .iter()
             .for_each(|(name, _)| self.name(name));
         walk_member_access(self, member_access);
+        self.leave();
+    }
+
+    fn visit_case(&mut self, case: &'ast Spanned<Case>) {
+        self.enter(case.span, "case", true);
+        walk_case(self, case);
+        self.leave();
     }
 
     fn visit_stmt(&mut self, stmt: &'ast Stmt) {
