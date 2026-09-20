@@ -1,5 +1,5 @@
 use crate::T;
-use crate::lexer::{Span, Token, TokenKind};
+use crate::lexer::{Span, TokenKind};
 use crate::parser::ast::ExprKind::WithScoped;
 use crate::parser::ast::{
     Argument, ArgumentType, Case, DoLoopCheck, DoLoopCondition, ErrorClause, Expr, ExprKind,
@@ -9,10 +9,7 @@ use crate::parser::ast::{
 use crate::parser::{ParseError, Parser};
 use std::collections::HashSet;
 
-impl<I> Parser<'_, I>
-where
-    I: Iterator<Item = Token>,
-{
+impl Parser<'_> {
     /// Parses a whole script into its items, or gives the first error.
     pub fn file(&mut self) -> Result<Vec<Item>, ParseError> {
         let mut items = Vec::new();
@@ -563,7 +560,7 @@ where
     }
 
     /// Parse a block of statements until we reach an `end` token.
-    pub fn block(
+    pub(crate) fn block(
         &mut self,
         multi_line: bool,
         end_tokens: &[TokenKind],

@@ -1,15 +1,12 @@
 // In parser/expressions.rs
 
 use crate::T;
-use crate::lexer::{Token, TokenKind};
+use crate::lexer::TokenKind;
 use crate::parser::ast::{Expr, ExprKind, Lit};
 use crate::parser::{ParseError, Parser};
 
-impl<I> Parser<'_, I>
-where
-    I: Iterator<Item = Token>,
-{
-    pub fn expression_with_prefix(
+impl Parser<'_> {
+    pub(crate) fn expression_with_prefix(
         &mut self,
         first_expression_part: Option<Expr>,
     ) -> Result<Expr, ParseError> {
@@ -20,11 +17,11 @@ where
         self.parse_expression(0)
     }
 
-    pub fn parse_expression(&mut self, binding_power: u8) -> Result<Expr, ParseError> {
+    pub(crate) fn parse_expression(&mut self, binding_power: u8) -> Result<Expr, ParseError> {
         self.parse_expression_with_prefix(binding_power, None)
     }
 
-    pub fn parse_expression_with_prefix(
+    pub(crate) fn parse_expression_with_prefix(
         &mut self,
         binding_power: u8,
         first_expression_part: Option<Expr>,
@@ -146,7 +143,7 @@ where
     }
 
     // expressions for constants are very limited, no math
-    pub fn parse_const_literal(&mut self) -> Result<Lit, ParseError> {
+    pub(crate) fn parse_const_literal(&mut self) -> Result<Lit, ParseError> {
         let lit = match self.peek() {
             sign @ T![+] | sign @ T![-] => {
                 self.consume(sign)?;

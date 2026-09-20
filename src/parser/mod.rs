@@ -81,12 +81,9 @@ const MAX_NESTING_DEPTH: usize = 128;
 /// [`file`](Parser::file) parses a whole script. The other public functions parse a part of
 /// one, like a single [`statement`](Parser::statement) or
 /// [`expression`](Parser::expression), from where the parser is in the input.
-pub struct Parser<'input, I>
-where
-    I: Iterator<Item = Token>,
-{
+pub struct Parser<'input> {
     input: &'input str,
-    tokens: Peekable<I>,
+    tokens: Peekable<TokenIter<'input>>,
     /// Current nesting depth of expressions and statements, see [`MAX_NESTING_DEPTH`].
     depth: usize,
     /// Line and column of the last token that was consumed, (0, 0) if there was none yet.
@@ -97,9 +94,9 @@ where
     procedure_depth: usize,
 }
 
-impl<'input> Parser<'input, TokenIter<'input>> {
+impl<'input> Parser<'input> {
     /// A parser for a script, or for a part of one.
-    pub fn new(input: &'input str) -> Parser<'input, TokenIter<'input>> {
+    pub fn new(input: &'input str) -> Parser<'input> {
         Parser {
             input,
             tokens: TokenIter::new(input).peekable(),
@@ -111,10 +108,7 @@ impl<'input> Parser<'input, TokenIter<'input>> {
     }
 }
 
-impl<'input, I> Parser<'input, I>
-where
-    I: Iterator<Item = Token>,
-{
+impl<'input> Parser<'input> {
     /// Register one more level of nesting, fails if the input is nested too deep.
     pub(crate) fn enter_nested(&mut self) -> Result<(), ParseError> {
         if self.depth >= MAX_NESTING_DEPTH {
@@ -142,7 +136,7 @@ where
     }
 
     /// Get the source text of a token.
-    pub fn text(&self, token: &Token) -> &'input str {
+    pub(crate) fn text(&self, token: &Token) -> &'input str {
         token.text(self.input)
     }
 
@@ -272,13 +266,13 @@ where
 }
 
 /// Iterator over the tokens of the lexer, filtering out whitespace, empty lines and comments.
-pub struct TokenIter<'input> {
+pub(crate) struct TokenIter<'input> {
     lexer: Lexer<'input>,
     prev_token_kind: TokenKind,
 }
 
 impl<'input> TokenIter<'input> {
-    pub fn new(input: &'input str) -> Self {
+    pub(crate) fn new(input: &'input str) -> Self {
         Self {
             lexer: Lexer::new(input),
             prev_token_kind: T![nl],
