@@ -77,7 +77,7 @@ pub(super) enum LogosToken {
     // Constructs
     #[regex(r#""([^"]|"")*""#, word_callback)]
     String((usize, usize)),
-    #[regex(r#"\d+"#, word_callback, priority = 6)]
+    #[regex(r#"[0-9]+"#, word_callback, priority = 6)]
     Int((usize, usize)),
     // A & suffix means that the number is of the type Long (32 bit integer).
     #[regex(r#"&[Hh][0-9A-Fa-f]+&?"#, word_callback, priority = 6)]
@@ -89,7 +89,7 @@ pub(super) enum LogosToken {
     #[regex(r#"&[Oo]?[0-7]+&?"#, word_callback, priority = 6)]
     OctalInt((usize, usize)),
     #[regex(
-        r#"((\d+\.\d*)|(\.\d+))([Ee](\+|-)?\d+)?|\d([Ee](\+|-)?\d+)"#,
+        r#"(([0-9]+\.[0-9]*)|(\.[0-9]+))([Ee](\+|-)?[0-9]+)?|[0-9]([Ee](\+|-)?[0-9]+)"#,
         word_callback,
         priority = 100
     )]
@@ -98,12 +98,12 @@ pub(super) enum LogosToken {
     // The day in the `#M/D/YYYY#` form is 1-2 digits (1-31); it must not be
     // restricted to `\d[0-2]?`, which rejects days like 13-19 and 23-29.
     #[regex(
-        r#"# *\d\d?/\d\d?/\d{4} *#|#\d{4}-\d[0-2]?-\d\d?#|#\d{3}-\d\d?#"#,
+        r#"# *[0-9][0-9]?/[0-9][0-9]?/[0-9]{4} *#|#[0-9]{4}-[0-9][0-2]?-[0-9][0-9]?#|#[0-9]{3}-[0-9][0-9]?#"#,
         word_callback
     )]
     DateTime((usize, usize)),
 
-    #[regex(r#"([A-Za-z])([A-Za-z]|_|\d)*"#, word_callback)]
+    #[regex(r#"([A-Za-z])([A-Za-z]|_|[0-9])*"#, word_callback)]
     // Escaped/bracketed identifier, e.g. `[L178 Side Flasher]`, which may contain
     // spaces and other characters that are not valid in a bare identifier.
     #[regex(r#"\[[^\]]*\]"#, word_callback)]

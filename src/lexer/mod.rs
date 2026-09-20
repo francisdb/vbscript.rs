@@ -212,6 +212,32 @@ mod test {
         assert_eq!(reconstructed, input);
     }
 
+    /// Digits are ASCII only: `cscript` on Windows rejects any other Unicode digit
+    /// with error 1032 "Invalid character", both in numbers and in identifiers.
+    #[test]
+    fn non_ascii_digit_is_parse_error() {
+        // ARABIC-INDIC DIGIT THREE, FULLWIDTH DIGIT THREE, DEVANAGARI DIGIT THREE
+        for digit in ['\u{0663}', '\u{FF13}', '\u{0969}'] {
+            let input = format!("1{digit}");
+            let tokens = Lexer::new(&input).tokenize();
+            let token_kinds = tokens.iter().map(|t| t.kind).collect::<Vec<_>>();
+            assert_eq!(
+                token_kinds,
+                [T![integer_literal], T![parse_error], T![EOF]],
+                "{input}"
+            );
+
+            let input = format!("a{digit}");
+            let tokens = Lexer::new(&input).tokenize();
+            let token_kinds = tokens.iter().map(|t| t.kind).collect::<Vec<_>>();
+            assert_eq!(
+                token_kinds,
+                [T![ident], T![parse_error], T![EOF]],
+                "{input}"
+            );
+        }
+    }
+
     #[test]
     fn string_literal() {
         let input = r#""hello world""#;
