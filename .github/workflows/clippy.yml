@@ -1,6 +1,10 @@
 on: push
 name: Clippy check
 
+# The job only reads the repository
+permissions:
+  contents: read
+
 # Make sure CI fails on all warnings, including Clippy lints and rustdoc warnings
 env:
   RUSTFLAGS: "-Dwarnings"
