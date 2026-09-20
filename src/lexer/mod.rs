@@ -20,6 +20,8 @@ pub struct LogosLexer<'input> {
     generated: logos::SpannedIter<'input, LogosToken>,
     eof: bool,
     prev_token: Token,
+    /// The last token was a dot, not counting whitespace and line continuations.
+    after_dot: bool,
     queued_token: Option<Token>,
 }
 
@@ -34,6 +36,7 @@ impl<'input> LogosLexer<'input> {
                 line: 1,
                 column: 1,
             },
+            after_dot: false,
             queued_token: None,
         }
     }
@@ -70,27 +73,14 @@ impl Iterator for LogosLexer<'_> {
                         LogosToken::Ident(_) => Some(&self.generated.source()[span.clone()]),
                         _ => None,
                     };
+                    // A word that follows a dot is a member name, also if it is a keyword:
+                    // `x.end`, `x.rem` and `.default` in a with block are all valid.
+                    let after_dot = std::mem::take(&mut self.after_dot);
+                    let word = word.filter(|_| !after_dot);
                     let keyword = word.and_then(keyword::keyword_kind);
                     // We can't handle this one as a comment in the generated lexer because
                     // x.rem is a valid member access
                     let is_rem = word.is_some_and(|word| word.eq_ignore_ascii_case("rem"));
-
-                    // Some tokens are transformed to identifiers when they are following member access
-                    // TODO look at the last non-whitespace character
-                    // TODO add more cases
-                    if matches!(self.prev_token.kind, T![_.])
-                        && (is_rem || matches!(keyword, Some(T![true] | T![false])))
-                    {
-                        let (line, column) = current_token.line_column();
-                        let rem_ident = Token {
-                            kind: T![ident],
-                            span: span.into(),
-                            line,
-                            column,
-                        };
-                        self.prev_token = rem_ident;
-                        return Some(rem_ident);
-                    }
 
                     // if we find a REM we see it as a comment until the end of the line
                     if is_rem {
@@ -174,6 +164,7 @@ impl Iterator for LogosLexer<'_> {
                             column,
                         };
                         self.prev_token = replacement_token;
+                        self.after_dot = true;
                         return Some(replacement_token);
                     }
                     let token = Token {
@@ -183,6 +174,12 @@ impl Iterator for LogosLexer<'_> {
                         column,
                     };
                     self.prev_token = token;
+                    self.after_dot = match current_kind {
+                        T![.] => true,
+                        // there can be whitespace between the dot and the member name
+                        T![ws] | T![line_continuation] => after_dot,
+                        _ => false,
+                    };
                     Some(token)
                 }
                 Err(_) => {
@@ -326,6 +323,43 @@ mod test {
             let token_kinds = tokens.iter().map(|t| t.kind).collect::<Vec<_>>();
             assert_eq!(token_kinds, [T![unused], T![EOF]], "{word}");
         }
+    }
+
+    /// `cscript` on Windows accepts every keyword as a member name, the wine lexer does not
+    /// look for keywords after a dot either.
+    #[test]
+    fn word_after_dot_is_an_identifier() {
+        let kinds = |input: &str| -> Vec<_> {
+            Lexer::new(input)
+                .map(|t| t.kind)
+                .filter(|kind| !matches!(kind, T![ws] | T![line_continuation]))
+                .collect()
+        };
+        for word in ["end", "rem", "default", "error", "true", "type", "x"] {
+            let expected = [
+                T![ident],
+                T![_.],
+                T![ident],
+                T![=],
+                T![integer_literal],
+                T![EOF],
+            ];
+            assert_eq!(kinds(&format!("o.{word} = 1")), expected, "{word}");
+            // there can be whitespace or a line continuation after the dot
+            assert_eq!(kinds(&format!("o. {word} = 1")), expected, "{word}");
+            assert_eq!(kinds(&format!("o. _\n {word} = 1")), expected, "{word}");
+            // the dot of a with block
+            assert_eq!(
+                kinds(&format!(".{word} = 1")),
+                [T![.], T![ident], T![=], T![integer_literal], T![EOF]],
+                "{word}"
+            );
+        }
+        // only the word right after the dot
+        assert_eq!(
+            kinds("o.end end"),
+            [T![ident], T![_.], T![ident], T![end], T![EOF]]
+        );
     }
 
     #[test]
