@@ -229,7 +229,7 @@ impl Expr {
         ExprKind::Ident(name.into()).into()
     }
 
-    pub fn int(i: isize) -> Self {
+    pub fn int(i: i32) -> Self {
         ExprKind::Literal(Lit::Int(i.to_string())).into()
     }
 
@@ -573,7 +573,7 @@ impl Lit {
         Lit::Str(s.into())
     }
 
-    pub fn int(i: isize) -> Self {
+    pub fn int(i: i32) -> Self {
         Lit::Int(i.to_string())
     }
 }
