@@ -3510,6 +3510,60 @@ Const a = 1			' some info
         }
     }
 
+    /// `default` and `property` are the name of a variable when no sub, function or
+    /// property follows, verified with `cscript` on Windows.
+    #[test]
+    fn test_class_variable_named_default_or_property() {
+        let input = indoc! {"
+            Class Foo
+                Public default, x
+                Private property(2), y
+                Public Default Property Get Value()
+                End Property
+            End Class
+        "};
+        let items = parse_file(input);
+        let ItemKind::Class {
+            members,
+            member_accessors,
+            ..
+        } = &items[0].node
+        else {
+            panic!("expected a class")
+        };
+        let names: Vec<Vec<&str>> = members
+            .iter()
+            .map(|member| member.properties.iter().map(|v| v.name.as_str()).collect())
+            .collect();
+        assert_eq!(names, [["default", "x"], ["property", "y"]]);
+        assert_eq!(members[1].properties[0].bounds, Some(vec![2]));
+        assert_eq!(text(input, &members[0].properties[0].name), "default");
+        assert_eq!(text(input, &members[1].properties[0].name), "property");
+        assert_eq!(member_accessors.len(), 1);
+        assert_eq!(
+            member_accessors[0].visibility,
+            PropertyVisibility::Public { default: true }
+        );
+
+        for input in [
+            "Class Foo\nPublic default\nEnd Class",
+            "Class Foo\nPrivate default\nEnd Class",
+            "Class Foo\nPublic property\nEnd Class",
+            // a variable named default does not count as the default member
+            "Class Foo\nPublic default\nPublic Default Sub Run()\nEnd Sub\nEnd Class",
+        ] {
+            let result = Parser::new(input).file();
+            assert!(result.is_ok(), "{input}: {result:?}");
+        }
+        for input in [
+            "Class Foo\nPublic Property foo\nEnd Class",
+            "Class Foo\nproperty\nEnd Class",
+        ] {
+            let result = Parser::new(input).file();
+            assert!(result.is_err(), "{input}: {result:?}");
+        }
+    }
+
     #[test]
     fn class_with_only_members() {
         let input = indoc! {r#"

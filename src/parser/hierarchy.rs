@@ -125,19 +125,26 @@ impl Parser<'_> {
         while !self.at(T![end]) {
             let member_start = self.start();
             let mut default = None;
+            // `default` and `property` are only a keyword before what they go with, as in
+            // `Public Default Function` and `Public Property Get`. Otherwise they are the
+            // name of a variable of the class: `Public default, x` or `Private property(2)`.
+            let mut first_variable = None;
             let visibility = if self.at(T![public]) {
                 self.consume(T![public])?;
                 if self.at(T![default]) {
                     let token = self.consume(T![default])?;
-                    if has_default {
+                    if !matches!(self.peek(), T![sub] | T![function] | T![property]) {
+                        first_variable = Some(self.name(&token));
+                    } else if has_default {
                         return Err(ParseError::new(
                             "A class can only have one default member",
                             token.line,
                             token.column,
                         ));
+                    } else {
+                        has_default = true;
+                        default = Some(true);
                     }
-                    has_default = true;
-                    default = Some(true);
                 }
                 Visibility::Public
             } else if self.at(T![private]) {
@@ -147,11 +154,21 @@ impl Parser<'_> {
                 Visibility::Default
             };
 
-            match self.peek() {
-                T![property] => {
+            if first_variable.is_none() && self.at(T![property]) {
+                let token = self.consume(T![property])?;
+                if matches!(self.peek(), T![get] | T![let] | T![set]) {
                     let property = self.class_property(default, visibility)?;
                     member_accessors.push(self.spanned(property, member_start));
+                    continue;
                 }
+                first_variable = Some(self.name(&token));
+            }
+            if first_variable.is_some() {
+                members.push(self.class_member(visibility, first_variable)?);
+                continue;
+            }
+
+            match self.peek() {
                 T![function] => {
                     let function = self.class_function(visibility, default.is_some())?;
                     methods.push(self.spanned(function, member_start));
@@ -181,7 +198,7 @@ impl Parser<'_> {
                     self.consume(T![nl])?;
                 }
                 _ => {
-                    members.push(self.class_member(visibility)?);
+                    members.push(self.class_member(visibility, None)?);
                 }
             }
         }
@@ -239,7 +256,13 @@ impl Parser<'_> {
         })
     }
 
-    fn class_member(&mut self, visibility: Visibility) -> Result<MemberDefinitions, ParseError> {
+    /// The variables of a class after a visibility, `first` when the first name is read
+    /// already.
+    fn class_member(
+        &mut self,
+        visibility: Visibility,
+        mut first: Option<Name>,
+    ) -> Result<MemberDefinitions, ParseError> {
         // properties
         if visibility == Visibility::Default {
             let peek = self.peek_full()?;
@@ -255,7 +278,10 @@ impl Parser<'_> {
         // like a dim we can have multiple properties in one line of which some can be arrays
         let mut properties = Vec::new();
         while {
-            let name = self.identifier("class member")?;
+            let name = match first.take() {
+                Some(name) => name,
+                None => self.identifier("class member")?,
+            };
             let bounds = self.const_bounds()?;
             properties.push(VarDecl { name, bounds });
             self.at(T![,])
@@ -342,7 +368,7 @@ impl Parser<'_> {
             },
         };
 
-        self.consume(T![property])?;
+        // the `Property` is consumed already
         // let (Variant), get or set (Object)
         let property_type = match self.peek() {
             T![let] => {
