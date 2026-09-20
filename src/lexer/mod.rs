@@ -289,6 +289,39 @@ mod test {
         assert_eq!((eof.kind, eof.line, eof.column), (T![EOF], 2, 1));
     }
 
+    /// These are reserved on Windows, `cscript` fails with error 1010 "Expected identifier"
+    /// when they are used as a variable name.
+    #[test]
+    fn reserved_words_without_own_token_kind() {
+        for word in [
+            "currency",
+            "event",
+            "implements",
+            "like",
+            "lset",
+            "optional",
+            "paramarray",
+            "raiseevent",
+            "rset",
+            "shared",
+            "single",
+            "static",
+            "typeof",
+            "variant",
+            "as",
+            "byte",
+            "boolean",
+            "double",
+            "integer",
+            "long",
+            "type",
+        ] {
+            let tokens = Lexer::new(word).tokenize();
+            let token_kinds = tokens.iter().map(|t| t.kind).collect::<Vec<_>>();
+            assert_eq!(token_kinds, [T![unused], T![EOF]], "{word}");
+        }
+    }
+
     #[test]
     fn string_literal() {
         let input = r#""hello world""#;
