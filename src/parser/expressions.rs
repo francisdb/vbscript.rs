@@ -275,7 +275,7 @@ where
         // `Me` is an expression, it can not be declared as a name
         if self.at(T![me]) {
             let me = self.consume(T![me])?;
-            let me = self.text(&me).to_string();
+            let me = self.name(&me);
             return Ok(self.spanned(ExprKind::Ident(me), start));
         }
 
@@ -285,7 +285,7 @@ where
                 let base = self.spanned(ExprKind::WithScoped, start);
                 self.consume(T![.])?;
                 let ident = self.consume(T![ident])?;
-                let property = self.text(&ident).to_string();
+                let property = self.name(&ident);
                 ExprKind::MemberExpression {
                     base: Box::new(base),
                     property,
@@ -294,8 +294,7 @@ where
             T![new] => {
                 self.consume(T![new])?;
                 let ident = self.consume(T![ident])?;
-                let class_name = self.text(&ident);
-                ExprKind::New(class_name.to_string())
+                ExprKind::New(self.name(&ident))
             }
             T!['('] => {
                 self.consume(T!['('])?;
@@ -624,7 +623,7 @@ mod test {
                 lhs: Box::new(
                     MemberExpression {
                         base: Box::new(Expr::ident("Me")),
-                        property: "Name".to_string(),
+                        property: "Name".into(),
                     }
                     .into()
                 ),
@@ -672,7 +671,7 @@ mod test {
                 lhs: Box::new(
                     MemberExpression {
                         base: Box::new(Expr::paren(Expr::ident("foo"))),
-                        property: "enabled".to_string(),
+                        property: "enabled".into(),
                     }
                     .into()
                 ),

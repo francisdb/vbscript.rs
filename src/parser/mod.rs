@@ -123,6 +123,11 @@ where
         self.depth -= 1;
     }
 
+    /// The text of a token as a name, with the span of the token.
+    pub(crate) fn name(&self, token: &Token) -> ast::Name {
+        Spanned::with_span(self.text(token).to_string(), token.span)
+    }
+
     /// Get the source text of a token.
     pub fn text(&self, token: &Token) -> &'input str {
         token.text(self.input)
@@ -633,7 +638,7 @@ Const a = 1			' some info
         assert_eq!(
             stmt,
             StmtKind::ForStmt {
-                counter: "i".to_string(),
+                counter: "i".into(),
                 start: Box::new(Expr::int(1)),
                 end: Box::new(Expr::int(10)),
                 step: None,
@@ -668,7 +673,7 @@ Const a = 1			' some info
         assert_eq!(
             stmt,
             StmtKind::ForStmt {
-                counter: "i".to_string(),
+                counter: "i".into(),
                 start: Box::new(Expr::int(1)),
                 end: Box::new(Expr::int(10)),
                 step: None,
@@ -718,7 +723,7 @@ Const a = 1			' some info
             vec![
                 ItemKind::Statement(
                     StmtKind::ForStmt {
-                        counter: "i".to_string(),
+                        counter: "i".into(),
                         start: Box::new(Expr::ident("For_nr")),
                         end: Box::new(Expr::ident("Next_nr")),
                         step: Some(Box::new(Expr::ident("Bdir"))),
@@ -739,7 +744,7 @@ Const a = 1			' some info
         assert_eq!(
             stmt,
             StmtKind::ForStmt {
-                counter: "x".to_string(),
+                counter: "x".into(),
                 start: Box::new(Expr::int(1)),
                 end: Box::new(InfixOp {
                     op: T![+],
@@ -772,14 +777,14 @@ Const a = 1			' some info
         assert_eq!(
             stmt,
             StmtKind::ForEachStmt {
-                element: "dog".to_string(),
+                element: "dog".into(),
                 group: Box::new(Expr::ident("dogs")),
                 body: vec![
                     StmtKind::Assignment {
                         full_ident: FullIdent(Box::new(
                             ExprKind::MemberExpression {
                                 base: Box::new(Expr::ident("dog")),
-                                property: "visible".to_string(),
+                                property: "visible".into(),
                             }
                             .into()
                         )),
@@ -801,7 +806,7 @@ Const a = 1			' some info
         assert_eq!(
             stmt,
             StmtKind::ForEachStmt {
-                element: "dog".to_string(),
+                element: "dog".into(),
                 group: Box::new(Expr::ident("dogs")),
                 body: vec![
                     StmtKind::Assignment {
@@ -834,11 +839,8 @@ Const a = 1			' some info
             ItemKind::Statement(
                 StmtKind::Function {
                     visibility: Visibility::Default,
-                    name: "add".to_string(),
-                    parameters: vec![
-                        Argument::ByVal("a".to_string()),
-                        Argument::ByVal("b".to_string())
-                    ],
+                    name: "add".into(),
+                    parameters: vec![Argument::ByVal("a".into()), Argument::ByVal("b".into())],
                     body: vec![
                         StmtKind::Assignment {
                             full_ident: FullIdent::ident("add"),
@@ -873,11 +875,8 @@ Const a = 1			' some info
             stmt,
             StmtKind::Sub {
                 visibility: Visibility::Default,
-                name: "log".to_string(),
-                parameters: vec![
-                    Argument::ByVal("a".to_string()),
-                    Argument::ByVal("b".to_string())
-                ],
+                name: "log".into(),
+                parameters: vec![Argument::ByVal("a".into()), Argument::ByVal("b".into())],
                 body: vec![],
             }
             .into()
@@ -895,7 +894,7 @@ Const a = 1			' some info
             stmt,
             StmtKind::Sub {
                 visibility: Visibility::Private,
-                name: "log".to_string(),
+                name: "log".into(),
                 parameters: vec![],
                 body: vec![],
             }
@@ -912,7 +911,7 @@ Const a = 1			' some info
             stmt,
             StmtKind::Sub {
                 visibility: Visibility::Default,
-                name: "Trigger003_hit".to_string(),
+                name: "Trigger003_hit".into(),
                 parameters: vec![],
                 body: vec![
                     StmtKind::Assignment {
@@ -953,7 +952,7 @@ Const a = 1			' some info
                         body: vec![
                             StmtKind::Sub {
                                 visibility: Visibility::Default,
-                                name: "inner".to_string(),
+                                name: "inner".into(),
                                 parameters: vec![],
                                 body: vec![],
                             }
@@ -982,7 +981,7 @@ Const a = 1			' some info
             stmt,
             StmtKind::Sub {
                 visibility: Visibility::Default,
-                name: "Trigger1_Hit".to_string(),
+                name: "Trigger1_Hit".into(),
                 parameters: vec![],
                 body: vec![
                     StmtKind::IfStmt {
@@ -1023,8 +1022,8 @@ Const a = 1			' some info
             stmt,
             StmtKind::Sub {
                 visibility: Visibility::Default,
-                name: "test".to_string(),
-                parameters: vec![Argument::ByRef("a".to_string())],
+                name: "test".into(),
+                parameters: vec![Argument::ByRef("a".into())],
                 body: vec![],
             }
             .into()
@@ -1048,8 +1047,8 @@ Const a = 1			' some info
                 ItemKind::Statement(
                     StmtKind::Sub {
                         visibility: Visibility::Default,
-                        name: "test".to_string(),
-                        parameters: vec![Argument::ByRef("a".to_string())],
+                        name: "test".into(),
+                        parameters: vec![Argument::ByRef("a".into())],
                         body: vec![],
                     }
                     .into()
@@ -1058,8 +1057,8 @@ Const a = 1			' some info
                 ItemKind::Statement(
                     StmtKind::Function {
                         visibility: Visibility::Default,
-                        name: "test2".to_string(),
-                        parameters: vec![Argument::ByVal("a".to_string())],
+                        name: "test2".into(),
+                        parameters: vec![Argument::ByVal("a".into())],
                         body: vec![
                             StmtKind::Assignment {
                                 full_ident: FullIdent::ident("test2"),
@@ -1771,6 +1770,101 @@ Const a = 1			' some info
     }
 
     #[test]
+    fn test_span_of_names() {
+        let input = indoc! {"
+            Public Function  Foo (ByVal first, ByRef second)
+                Dim local, arr(2)
+                For counter = 1 To 2
+                    ReDim other(counter)
+                Next
+                Set x = New Bar
+                x. Prop = 1
+            End Function
+            Class Klass
+                Public Property Let Value(v)
+                End Property
+            End Class
+        "};
+        let items = parse_file(input);
+        let ItemKind::Statement(function) = &items[0].node else {
+            panic!("expected a statement")
+        };
+        let StmtKind::Function {
+            name,
+            parameters,
+            body,
+            ..
+        } = &function.node
+        else {
+            panic!("expected a function")
+        };
+        // a name compares with a str and points at just the name
+        assert_eq!(*name, "Foo");
+        assert_eq!(text(input, name), "Foo");
+        assert!(text(input, function).starts_with("Public Function"));
+        let parameters: Vec<_> = parameters
+            .iter()
+            .map(|(Argument::ByVal(name) | Argument::ByRef(name))| text(input, name))
+            .collect();
+        assert_eq!(parameters, ["first", "second"]);
+
+        let StmtKind::Dim { vars } = &body[0].node else {
+            panic!("expected a dim")
+        };
+        let vars: Vec<_> = vars.iter().map(|var| text(input, &var.name)).collect();
+        assert_eq!(vars, ["local", "arr"]);
+
+        let StmtKind::ForStmt {
+            counter,
+            body: for_body,
+            ..
+        } = &body[1].node
+        else {
+            panic!("expected a for")
+        };
+        assert_eq!(text(input, counter), "counter");
+        let StmtKind::ReDim { vars, .. } = &for_body[0].node else {
+            panic!("expected a redim")
+        };
+        assert_eq!(text(input, &vars[0].name), "other");
+
+        let StmtKind::Set {
+            rhs: SetRhs::Expr(new),
+            ..
+        } = &body[2].node
+        else {
+            panic!("expected a set")
+        };
+        let ExprKind::New(class) = &new.node else {
+            panic!("expected a new")
+        };
+        assert_eq!(text(input, new), "New Bar");
+        assert_eq!(text(input, class), "Bar");
+
+        let StmtKind::Assignment { full_ident, .. } = &body[3].node else {
+            panic!("expected an assignment")
+        };
+        let ExprKind::MemberExpression { property, .. } = &full_ident.0.node else {
+            panic!("expected a member expression")
+        };
+        // there can be whitespace after the dot, not before it
+        assert_eq!(text(input, &full_ident.0), "x. Prop");
+        assert_eq!(text(input, property), "Prop");
+
+        let ItemKind::Class {
+            name,
+            member_accessors,
+            ..
+        } = &items[1].node
+        else {
+            panic!("expected a class")
+        };
+        assert_eq!(text(input, name), "Klass");
+        assert_eq!(text(input, &member_accessors[0].name), "Value");
+        assert_eq!(text(input, &member_accessors[0].args[0].0), "v");
+    }
+
+    #[test]
     fn test_single_line_if() {
         let input = r#"If Err Then MsgBox "Oh noes""#;
         let stmt = parse_stmt(input, true);
@@ -2283,8 +2377,8 @@ Const a = 1			' some info
         assert_eq!(
             stmt,
             StmtKind::Const(vec![
-                ("x".to_string(), Lit::int(42)),
-                ("txt".to_string(), Lit::str("Hello".to_string())),
+                ("x".into(), Lit::int(42)),
+                ("txt".into(), Lit::str("Hello".to_string())),
             ])
             .into()
         );
@@ -2302,12 +2396,12 @@ Const a = 1			' some info
             vec![
                 ItemKind::Const {
                     visibility: Visibility::Public,
-                    values: vec![("x".to_string(), Lit::int(42))],
+                    values: vec![("x".into(), Lit::int(42))],
                 }
                 .into(),
                 ItemKind::Const {
                     visibility: Visibility::Public,
-                    values: vec![("y".to_string(), Lit::int(13))],
+                    values: vec![("y".into(), Lit::int(13))],
                 }
                 .into()
             ]
@@ -2326,12 +2420,12 @@ Const a = 1			' some info
             vec![
                 ItemKind::Const {
                     visibility: Visibility::Public,
-                    values: vec![("Test".to_string(), Lit::Bool(false))],
+                    values: vec![("Test".into(), Lit::Bool(false))],
                 }
                 .into(),
                 ItemKind::Const {
                     visibility: Visibility::Public,
-                    values: vec![("Test2".to_string(), Lit::Bool(true))],
+                    values: vec![("Test2".into(), Lit::Bool(true))],
                 }
                 .into()
             ]
@@ -2349,7 +2443,7 @@ Const a = 1			' some info
             vec![
                 ItemKind::Const {
                     visibility: Visibility::Private,
-                    values: vec![("Test".to_string(), Lit::int(-1))],
+                    values: vec![("Test".into(), Lit::int(-1))],
                 }
                 .into()
             ]
@@ -2523,7 +2617,7 @@ Const a = 1			' some info
                     StmtKind::ReDim {
                         preserve: true,
                         vars: vec![ReDimVar {
-                            name: "tmp".to_string(),
+                            name: "tmp".into(),
                             bounds: vec![
                                 InfixOp {
                                     op: T![+],
@@ -2570,11 +2664,11 @@ Const a = 1			' some info
                 preserve: false,
                 vars: vec![
                     ReDimVar {
-                        name: "a".to_string(),
+                        name: "a".into(),
                         bounds: vec![Expr::ident("length")],
                     },
                     ReDimVar {
-                        name: "b".to_string(),
+                        name: "b".into(),
                         bounds: vec![Expr::int(2), Expr::int(3)],
                     },
                 ],
@@ -3063,14 +3157,14 @@ Const a = 1			' some info
             items,
             vec![
                 ItemKind::Class {
-                    name: "NullFadingObject".to_string(),
+                    name: "NullFadingObject".into(),
                     members: vec![],
                     dims: vec![],
                     member_accessors: vec![MemberAccess {
-                        name: "IntensityScale".to_string(),
+                        name: "IntensityScale".into(),
                         visibility: PropertyVisibility::Public { default: false },
                         property_type: PropertyType::Let,
-                        args: vec![("input".to_string(), ArgumentType::ByVal),],
+                        args: vec![("input".into(), ArgumentType::ByVal),],
                         body: vec![],
                     }],
                     methods: vec![],
@@ -3093,7 +3187,7 @@ Const a = 1			' some info
             items,
             vec![
                 ItemKind::Class {
-                    name: "MyClass".to_string(),
+                    name: "MyClass".into(),
                     members: vec![
                         MemberDefinitions {
                             visibility: Visibility::Public,
@@ -3129,7 +3223,7 @@ Const a = 1			' some info
             items,
             vec![
                 ItemKind::Class {
-                    name: "MyClass".to_string(),
+                    name: "MyClass".into(),
                     members: vec![],
                     dims: vec![
                         vec![VarDecl::new("Foo"), VarDecl::array("Bar", vec![9, 0]),],
@@ -3161,7 +3255,7 @@ Const a = 1			' some info
             items,
             vec![
                 ItemKind::Class {
-                    name: "MyClass".to_string(),
+                    name: "MyClass".into(),
                     members: vec![MemberDefinitions {
                         visibility: Visibility::Public,
                         properties: vec![VarDecl::new("Enabled")],
@@ -3171,7 +3265,7 @@ Const a = 1			' some info
                     methods: vec![
                         StmtKind::Sub {
                             visibility: Visibility::Public,
-                            name: "Class_Initialize".to_string(),
+                            name: "Class_Initialize".into(),
                             parameters: vec![],
                             body: vec![
                                 StmtKind::Assignment {
@@ -3184,7 +3278,7 @@ Const a = 1			' some info
                         .into(),
                         StmtKind::Sub {
                             visibility: Visibility::Private,
-                            name: "Class_Terminate".to_string(),
+                            name: "Class_Terminate".into(),
                             parameters: vec![],
                             body: vec![],
                         }
@@ -3611,8 +3705,8 @@ Const a = 1			' some info
                 ItemKind::Statement(
                     StmtKind::Function {
                         visibility: Visibility::Default,
-                        name: "NullFunction".to_string(),
-                        parameters: vec![Argument::ByVal("a".to_string())],
+                        name: "NullFunction".into(),
+                        parameters: vec![Argument::ByVal("a".into())],
                         body: vec![],
                     }
                     .into()
@@ -3632,8 +3726,8 @@ Const a = 1			' some info
                 ItemKind::Statement(
                     StmtKind::Function {
                         visibility: Visibility::Default,
-                        name: "NullFunction".to_string(),
-                        parameters: vec![Argument::ByVal("a".to_string())],
+                        name: "NullFunction".into(),
+                        parameters: vec![Argument::ByVal("a".into())],
                         body: vec![],
                     }
                     .into()
@@ -3935,7 +4029,7 @@ Const a = 1			' some info
                 ItemKind::Statement(
                     StmtKind::Sub {
                         visibility: Visibility::Default,
-                        name: "MySub".to_string(),
+                        name: "MySub".into(),
                         parameters: vec![],
                         body: vec![
                             StmtKind::IfStmt {
@@ -3985,28 +4079,28 @@ Const a = 1			' some info
             file,
             vec![
                 ItemKind::Class{
-                    name: "Property".to_string(),
+                    name: "Property".into(),
                     members: vec![],
                     dims: vec![],
                     member_accessors: vec![],
                     methods: vec![
                         StmtKind::Sub {
                             visibility: Visibility::Default,
-                            name: "Property".to_string(),
-                            parameters: vec![Argument::ByRef("property".to_string())],
+                            name: "Property".into(),
+                            parameters: vec![Argument::ByRef("property".into())],
                             body: vec![],
                         }.into(),
                     ],
                 }.into(),
                 ItemKind::Class{
-                    name: "Property2".to_string(),
+                    name: "Property2".into(),
                     members: vec![],
                     dims: vec![],
                     member_accessors: vec![],
                     methods: vec![
                         StmtKind::Function {
                             visibility: Visibility::Default,
-                            name: "Property".to_string(),
+                            name: "Property".into(),
                             parameters: vec![],
                             body: vec![],
                         }.into(),

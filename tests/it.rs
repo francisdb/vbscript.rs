@@ -5,8 +5,12 @@ use indoc::indoc;
 use pretty_assertions::assert_eq;
 
 use vbscript::parser::Parser;
-use vbscript::parser::ast::{Expr, ExprKind, Item, ItemKind, Stmt};
-use vbscript::parser::visit::{Visitor, walk_expr, walk_item, walk_items, walk_stmt};
+use vbscript::parser::ast::{
+    Argument, Expr, ExprKind, Item, ItemKind, MemberAccess, Name, Stmt, StmtKind,
+};
+use vbscript::parser::visit::{
+    Visitor, walk_expr, walk_item, walk_items, walk_member_access, walk_stmt,
+};
 use vbscript::{T, lexer::*};
 
 /// walks `$tokens` and compares them to the given kinds.
@@ -1206,6 +1210,24 @@ impl<'a> SpanCheck<'a> {
     fn leave(&mut self) {
         self.parents.pop();
     }
+
+    /// The span of a name is exactly that name, within the node it is a part of.
+    fn name(&self, name: &Name) {
+        let text = &self.input[Range::<usize>::from(name.span)];
+        assert_eq!(text, name.node, "the span of a name is not that name");
+        let parent = self.parents.last().unwrap().span;
+        assert!(
+            name.span.start >= parent.start && name.span.end <= parent.end,
+            "name {text} {:?} outside of {parent:?}",
+            name.span
+        );
+    }
+
+    fn arguments(&self, arguments: &[Argument]) {
+        for Argument::ByVal(name) | Argument::ByRef(name) in arguments {
+            self.name(name);
+        }
+    }
 }
 
 impl<'ast> Visitor<'ast> for SpanCheck<'_> {
@@ -1215,12 +1237,56 @@ impl<'ast> Visitor<'ast> for SpanCheck<'_> {
         }
         let ordered = !matches!(item.node, ItemKind::Class { .. });
         self.enter(item.span, "item", ordered);
+        match &item.node {
+            ItemKind::Class {
+                name,
+                members,
+                dims,
+                ..
+            } => {
+                self.name(name);
+                let members = members.iter().flat_map(|member| &member.properties);
+                for var in members.chain(dims.iter().flatten()) {
+                    self.name(&var.name);
+                }
+            }
+            ItemKind::Const { values, .. } => values.iter().for_each(|(name, _)| self.name(name)),
+            ItemKind::Variable { vars, .. } => vars.iter().for_each(|var| self.name(&var.name)),
+            ItemKind::OptionExplicit | ItemKind::Statement(_) => {}
+        }
         walk_item(self, item);
         self.leave();
     }
 
+    fn visit_member_access(&mut self, member_access: &'ast MemberAccess) {
+        // a property has no span of its own, its names are within the class
+        self.name(&member_access.name);
+        member_access
+            .args
+            .iter()
+            .for_each(|(name, _)| self.name(name));
+        walk_member_access(self, member_access);
+    }
+
     fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         self.enter(stmt.span, "statement", true);
+        match &stmt.node {
+            StmtKind::Sub {
+                name, parameters, ..
+            }
+            | StmtKind::Function {
+                name, parameters, ..
+            } => {
+                self.name(name);
+                self.arguments(parameters);
+            }
+            StmtKind::Dim { vars } => vars.iter().for_each(|var| self.name(&var.name)),
+            StmtKind::ReDim { vars, .. } => vars.iter().for_each(|var| self.name(&var.name)),
+            StmtKind::Const(values) => values.iter().for_each(|(name, _)| self.name(name)),
+            StmtKind::ForStmt { counter: name, .. }
+            | StmtKind::ForEachStmt { element: name, .. } => self.name(name),
+            _ => {}
+        }
         walk_stmt(self, stmt);
         self.leave();
     }
@@ -1232,6 +1298,17 @@ impl<'ast> Visitor<'ast> for SpanCheck<'_> {
             return;
         }
         self.enter(expr.span, "expression", true);
+        match &expr.node {
+            ExprKind::New(name) | ExprKind::MemberExpression { property: name, .. } => {
+                self.name(name)
+            }
+            ExprKind::Ident(name) => {
+                self.name(name);
+                // the same as the one of its expression
+                assert_eq!(name.span, expr.span);
+            }
+            _ => {}
+        }
         walk_expr(self, expr);
         self.leave();
     }

@@ -163,6 +163,30 @@ impl<T: Display> Display for Spanned<T> {
     }
 }
 
+/// A name as it is written in the source, with the span of just that name.
+///
+/// It dereferences to the `String` and compares with a `&str`, the span is there to point
+/// at the name: the one of a statement like a `Sub` covers all of it.
+pub type Name = Spanned<String>;
+
+impl From<&str> for Name {
+    fn from(name: &str) -> Self {
+        Spanned::from(name.to_string())
+    }
+}
+
+impl PartialEq<str> for Name {
+    fn eq(&self, other: &str) -> bool {
+        self.node == other
+    }
+}
+
+impl PartialEq<&str> for Name {
+    fn eq(&self, other: &&str) -> bool {
+        self.node == *other
+    }
+}
+
 /// An expression, see [`ExprKind`].
 pub type Expr = Spanned<ExprKind>;
 
@@ -198,7 +222,8 @@ impl Display for FullIdent {
 #[derive(Debug, Clone, PartialEq)]
 pub enum ExprKind {
     Literal(Lit),
-    Ident(String),
+    /// The span of the name is the one of the expression.
+    Ident(Name),
     PrefixOp {
         op: TokenKind,
         expr: Box<Expr>,
@@ -212,7 +237,7 @@ pub enum ExprKind {
     //     op: TokenKind,
     //     expr: Box<Expr>,
     // }
-    New(String),
+    New(Name),
     FnApplication {
         callee: Box<Expr>,
         args: Vec<Option<Expr>>,
@@ -225,13 +250,13 @@ pub enum ExprKind {
     Paren(Box<Expr>),
     MemberExpression {
         base: Box<Expr>,
-        property: String,
+        property: Name,
     },
 }
 
 impl Expr {
     pub fn ident(name: impl Into<String>) -> Self {
-        ExprKind::Ident(name.into()).into()
+        ExprKind::Ident(Name::from(name.into())).into()
     }
 
     pub fn int(i: i32) -> Self {
@@ -251,7 +276,7 @@ impl Expr {
     }
 
     pub fn new(name: impl Into<String>) -> Self {
-        ExprKind::New(name.into()).into()
+        ExprKind::New(Name::from(name.into())).into()
     }
 
     pub fn paren(expr: Expr) -> Self {
@@ -261,7 +286,7 @@ impl Expr {
     pub fn member(base: Expr, property: impl Into<String>) -> Self {
         ExprKind::MemberExpression {
             base: Box::new(base),
-            property: property.into(),
+            property: Name::from(property.into()),
         }
         .into()
     }
@@ -341,7 +366,7 @@ pub enum StmtKind {
         preserve: bool,
         vars: Vec<ReDimVar>,
     },
-    Const(Vec<(String, Lit)>),
+    Const(Vec<(Name, Lit)>),
     Set {
         var: FullIdent,
         rhs: SetRhs,
@@ -361,14 +386,14 @@ pub enum StmtKind {
         body: Vec<Stmt>,
     },
     ForStmt {
-        counter: String,
+        counter: Name,
         start: Box<Expr>,
         end: Box<Expr>,
         step: Option<Box<Expr>>,
         body: Vec<Stmt>,
     },
     ForEachStmt {
-        element: String,
+        element: Name,
         group: Box<Expr>,
         body: Vec<Stmt>,
     },
@@ -404,7 +429,7 @@ pub enum StmtKind {
     // You can't define a Sub procedure inside any other procedure (e.g. Function, Sub or Property Get).
     Sub {
         visibility: Visibility,
-        name: String,
+        name: Name,
         // TODO handle ByVal and ByRef
         parameters: Vec<Argument>,
         body: Vec<Stmt>,
@@ -412,7 +437,7 @@ pub enum StmtKind {
     // https://learn.microsoft.com/en-us/previous-versions//x7hbf8fa(v=vs.85)
     Function {
         visibility: Visibility,
-        name: String,
+        name: Name,
         parameters: Vec<Argument>,
         body: Vec<Stmt>,
     },
@@ -432,8 +457,8 @@ pub enum StmtKind {
 // https://docs.microsoft.com/en-us/dotnet/visual-basic/programming-guide/language-features/procedures/argument-passing-mechanisms
 #[derive(Debug, Clone, PartialEq)]
 pub enum Argument {
-    ByVal(String),
-    ByRef(String),
+    ByVal(Name),
+    ByRef(Name),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -458,9 +483,9 @@ pub enum ArgumentType {
 #[derive(Debug, Clone, PartialEq)]
 pub struct MemberAccess {
     pub visibility: PropertyVisibility,
-    pub name: String,
+    pub name: Name,
     pub property_type: PropertyType,
-    pub args: Vec<(String, ArgumentType)>,
+    pub args: Vec<(Name, ArgumentType)>,
     pub body: Vec<Stmt>,
 }
 
@@ -480,7 +505,7 @@ pub struct MemberDefinitions {
 /// An array that is given new bounds by a `ReDim` statement.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReDimVar {
-    pub name: String,
+    pub name: Name,
     /// The new upper bounds, at least one. Unlike the ones of a `Dim` these are expressions.
     pub bounds: Vec<Expr>,
 }
@@ -489,7 +514,7 @@ pub struct ReDimVar {
 /// level.
 #[derive(Debug, Clone, PartialEq)]
 pub struct VarDecl {
-    pub name: String,
+    pub name: Name,
     /// `None` for a plain variable like `a`, the constant upper bounds for an array:
     /// `a(1, 2)`, which are empty for a dynamic array `a()`.
     pub bounds: Option<Vec<usize>>,
@@ -499,7 +524,7 @@ impl VarDecl {
     /// A plain variable.
     pub fn new(name: impl Into<String>) -> Self {
         VarDecl {
-            name: name.into(),
+            name: Name::from(name.into()),
             bounds: None,
         }
     }
@@ -507,7 +532,7 @@ impl VarDecl {
     /// An array, dynamic if there are no bounds.
     pub fn array(name: impl Into<String>, bounds: Vec<usize>) -> Self {
         VarDecl {
-            name: name.into(),
+            name: Name::from(name.into()),
             bounds: Some(bounds),
         }
     }
@@ -519,7 +544,7 @@ pub enum ItemKind {
     OptionExplicit,
     // https://learn.microsoft.com/en-us/previous-versions//4ah5852c(v=vs.85)
     Class {
-        name: String,
+        name: Name,
         members: Vec<MemberDefinitions>,
         /// The variables of each `Dim` in the class
         dims: Vec<Vec<VarDecl>>,
@@ -530,7 +555,7 @@ pub enum ItemKind {
     /// Consts in procedures are handled by Stmt::Const
     Const {
         visibility: Visibility,
-        values: Vec<(String, Lit)>,
+        values: Vec<(Name, Lit)>,
     },
     /// This is a script-level variable that has visibility
     /// e.g. `Public a, b, c` or `Private a, b, c`
@@ -552,7 +577,7 @@ impl Stmt {
     }
 
     pub fn const_(var_name: impl Into<String>, value: Lit) -> Self {
-        StmtKind::Const(vec![(var_name.into(), value)]).into()
+        StmtKind::Const(vec![(Name::from(var_name.into()), value)]).into()
     }
 
     pub fn assignment(ident: FullIdent, value: Expr) -> Self {
