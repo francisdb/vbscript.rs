@@ -6,8 +6,8 @@ use crate::parser::ast::{
     FullIdent, Item, ItemKind, Lit, MemberAccess, MemberDefinitions, Name, PropertyType,
     PropertyVisibility, ReDimVar, SetRhs, Stmt, StmtKind, VarDecl, Visibility,
 };
+use crate::parser::scope::{ClassScope, Declared, Scope, procedure_scope};
 use crate::parser::{ParseError, Parser};
-use std::collections::HashSet;
 
 impl Parser<'_> {
     /// Parses a whole script into its items, or gives the first error.
@@ -84,6 +84,7 @@ impl Parser<'_> {
         let mut values = Vec::new();
         while !self.at(T![nl]) && !self.at(T![EOF]) {
             let name = self.identifier("const name")?;
+            self.declare(&name, Declared::Const)?;
             self.consume(T![=])?;
             let literal = self.parse_const_literal()?;
             values.push((name, literal));
@@ -101,6 +102,7 @@ impl Parser<'_> {
         let mut vars = Vec::new();
         while !self.at(T![nl]) && !self.at(T![EOF]) {
             let name = self.identifier("variable name")?;
+            self.declare(&name, Declared::Variable)?;
             let bounds = self.const_bounds()?;
             vars.push(VarDecl { name, bounds });
             if self.at(T![,]) {
@@ -114,9 +116,11 @@ impl Parser<'_> {
     }
 
     fn item_class(&mut self) -> Result<ItemKind, ParseError> {
-        let class_token = self.consume(T![class])?;
+        self.consume(T![class])?;
         let name = self.identifier("class name")?;
+        self.declare(&name, Declared::Class)?;
         self.consume_line_delimiter()?;
+        let mut scope = ClassScope::default();
         let mut members = Vec::new();
         let mut member_accessors = Vec::new();
         let mut methods = Vec::new();
@@ -158,23 +162,27 @@ impl Parser<'_> {
                 let token = self.consume(T![property])?;
                 if matches!(self.peek(), T![get] | T![let] | T![set]) {
                     let property = self.class_property(default, visibility)?;
+                    if !scope.property(&property.name, &property.property_type) {
+                        return Err(self.name_redefined(&property.name));
+                    }
                     member_accessors.push(self.spanned(property, member_start));
                     continue;
                 }
                 first_variable = Some(self.name(&token));
             }
             if first_variable.is_some() {
-                members.push(self.class_member(visibility, first_variable)?);
+                members.push(self.class_member(visibility, first_variable, &mut scope)?);
                 continue;
             }
 
             match self.peek() {
                 T![function] => {
-                    let function = self.class_function(visibility, default.is_some())?;
+                    let function =
+                        self.class_function(visibility, default.is_some(), &mut scope)?;
                     methods.push(self.spanned(function, member_start));
                 }
                 T![sub] => {
-                    let sub = self.class_sub(visibility, default.is_some())?;
+                    let sub = self.class_sub(visibility, default.is_some(), &mut scope)?;
                     methods.push(self.spanned(sub, member_start));
                 }
                 T![dim] => {
@@ -190,7 +198,7 @@ impl Parser<'_> {
                             peek.column,
                         ));
                     }
-                    dims.push(self.class_dim()?);
+                    dims.push(self.class_dim(&mut scope)?);
                 }
                 T![nl] => {
                     // Skip newlines, our token iter newline handling can't catch all cases
@@ -198,55 +206,13 @@ impl Parser<'_> {
                     self.consume(T![nl])?;
                 }
                 _ => {
-                    members.push(self.class_member(visibility, None)?);
+                    members.push(self.class_member(visibility, None, &mut scope)?);
                 }
             }
         }
         self.consume(T![end])?;
         self.consume(T![class])?;
         self.consume_line_delimiter()?;
-        let mut member_names = HashSet::new();
-        let name_redefined = |name: &str| {
-            ParseError::new(
-                format!("Name redefined '{name}'"),
-                class_token.line,
-                class_token.column,
-            )
-        };
-        for member in &members {
-            for VarDecl { name, .. } in &member.properties {
-                let lower = name.to_ascii_lowercase();
-                if member_names.contains(&lower) {
-                    return Err(name_redefined(name));
-                }
-                member_names.insert(lower);
-            }
-        }
-        for dim in &dims {
-            for VarDecl { name, .. } in dim {
-                let lower = name.to_ascii_lowercase();
-                if member_names.contains(&lower) {
-                    return Err(name_redefined(name));
-                }
-                member_names.insert(lower);
-            }
-        }
-        for method in &methods {
-            if let StmtKind::Sub { name, .. } = &method.node {
-                let lower = name.to_ascii_lowercase();
-                if member_names.contains(&lower) {
-                    return Err(name_redefined(name));
-                }
-                member_names.insert(lower);
-            }
-            if let StmtKind::Function { name, .. } = &method.node {
-                let lower = name.to_ascii_lowercase();
-                if member_names.contains(&lower) {
-                    return Err(name_redefined(name));
-                }
-                member_names.insert(lower);
-            }
-        }
         Ok(ItemKind::Class {
             name,
             members,
@@ -262,6 +228,7 @@ impl Parser<'_> {
         &mut self,
         visibility: Visibility,
         mut first: Option<Name>,
+        scope: &mut ClassScope,
     ) -> Result<MemberDefinitions, ParseError> {
         // properties
         if visibility == Visibility::Default {
@@ -282,6 +249,9 @@ impl Parser<'_> {
                 Some(name) => name,
                 None => self.identifier("class member")?,
             };
+            if !scope.variable(&name) {
+                return Err(self.name_redefined(&name));
+            }
             let bounds = self.const_bounds()?;
             properties.push(VarDecl { name, bounds });
             self.at(T![,])
@@ -296,11 +266,14 @@ impl Parser<'_> {
         Ok(member_definitions)
     }
 
-    fn class_dim(&mut self) -> Result<Vec<VarDecl>, ParseError> {
+    fn class_dim(&mut self, scope: &mut ClassScope) -> Result<Vec<VarDecl>, ParseError> {
         self.consume(T![dim])?;
         let mut vars = Vec::new();
         while !self.at(T![nl]) && !self.at(T![EOF]) {
             let name = self.identifier("variable name")?;
+            if !scope.variable(&name) {
+                return Err(self.name_redefined(&name));
+            }
             let bounds = self.const_bounds()?;
             vars.push(VarDecl { name, bounds });
             if self.at(T![,]) {
@@ -313,12 +286,20 @@ impl Parser<'_> {
         Ok(vars)
     }
 
-    fn class_sub(&mut self, visibility: Visibility, default: bool) -> Result<StmtKind, ParseError> {
+    fn class_sub(
+        &mut self,
+        visibility: Visibility,
+        default: bool,
+        scope: &mut ClassScope,
+    ) -> Result<StmtKind, ParseError> {
         self.consume(T![sub])?;
         let method_name = self.identifier("Sub name")?;
+        if !scope.method(&method_name) {
+            return Err(self.name_redefined(&method_name));
+        }
         let parameters = self.optional_declaration_parameter_list("Sub", &method_name)?;
         self.consume_line_delimiter()?;
-        let body = self.procedure_body()?;
+        let body = self.procedure_body(procedure_scope(parameters.iter().map(Argument::name)))?;
         self.consume(T![end])?;
         self.consume(T![sub])?;
         self.consume_line_delimiter()?;
@@ -335,12 +316,17 @@ impl Parser<'_> {
         &mut self,
         visibility: Visibility,
         default: bool,
+        scope: &mut ClassScope,
     ) -> Result<StmtKind, ParseError> {
         self.consume(T![function])?;
         let method_name = self.identifier("Function name")?;
+        if !scope.method(&method_name) {
+            return Err(self.name_redefined(&method_name));
+        }
         let parameters = self.optional_declaration_parameter_list("Function", &method_name)?;
         self.consume_line_delimiter()?;
-        let body = self.procedure_body()?;
+        let names = parameters.iter().map(Argument::name).chain([&method_name]);
+        let body = self.procedure_body(procedure_scope(names))?;
         self.consume(T![end])?;
         self.consume(T![function])?;
         self.consume_line_delimiter()?;
@@ -398,7 +384,8 @@ impl Parser<'_> {
         let name = self.identifier("property name")?;
         let property_arguments = self.optional_parenthesized_property_arguments(&name)?;
 
-        let property_body = self.procedure_body()?;
+        let names = property_arguments.iter().map(|(name, _)| name);
+        let property_body = self.procedure_body(procedure_scope(names.chain([&name])))?;
         self.consume(T![end])?;
         self.consume(T![property])?;
         self.consume_line_delimiter()?;
@@ -438,9 +425,10 @@ impl Parser<'_> {
         self.consume(T![sub])?;
 
         let name = self.identifier("sub name")?;
+        self.declare(&name, Declared::Procedure)?;
         let parameters = self.optional_declaration_parameter_list("Sub", &name)?;
         self.consume_optional_line_delimiter()?;
-        let body = self.procedure_body()?;
+        let body = self.procedure_body(procedure_scope(parameters.iter().map(Argument::name)))?;
 
         self.consume(T![end])?;
         self.consume(T![sub])?;
@@ -462,12 +450,13 @@ impl Parser<'_> {
         self.consume(T![function])?;
 
         let name = self.identifier("function name")?;
+        self.declare(&name, Declared::Procedure)?;
 
         let parameters = self.optional_declaration_parameter_list("Function", &name)?;
 
         self.consume_optional_line_delimiter()?;
-        // do we need to do something special with the returned value?
-        let body = self.procedure_body()?;
+        let names = parameters.iter().map(Argument::name).chain([&name]);
+        let body = self.procedure_body(procedure_scope(names))?;
 
         self.consume(T![end])?;
         self.consume(T![function])?;
@@ -544,9 +533,7 @@ impl Parser<'_> {
                     Argument::ByRef
                 };
 
-                let taken = parameters.iter().map(|parameter| match parameter {
-                    Argument::ByVal(name) | Argument::ByRef(name) => name,
-                });
+                let taken = parameters.iter().map(Argument::name);
                 let parameter_name = self.parameter_name(item_type, procedure, taken)?;
                 // In case of array parameters there is a () allowed after the parameter name
                 // this is optional and totally unclear in the documentation
@@ -678,9 +665,13 @@ impl Parser<'_> {
     }
 
     /// The statements of a sub, function or property, up to its `End`.
-    fn procedure_body(&mut self) -> Result<Vec<Stmt>, ParseError> {
+    ///
+    /// The scope has the names the procedure starts with, see [`procedure_scope`].
+    fn procedure_body(&mut self, scope: Scope) -> Result<Vec<Stmt>, ParseError> {
         self.procedure_depth += 1;
+        let outer = self.locals.replace(scope);
         let body = self.block(true, &[T![end]]);
+        self.locals = outer;
         self.procedure_depth -= 1;
         body
     }
@@ -942,6 +933,7 @@ impl Parser<'_> {
         let mut vars = Vec::new();
         while !self.at(T![nl]) && !self.at(T![EOF]) {
             let name = self.identifier("variable name")?;
+            self.declare(&name, Declared::Variable)?;
             let bounds = self.const_bounds()?;
             vars.push(VarDecl { name, bounds });
             if self.at(T![,]) {
@@ -972,6 +964,7 @@ impl Parser<'_> {
         let mut vars = Vec::new();
         loop {
             let name = self.identifier("variable name")?;
+            self.declare_redim(&name)?;
             let bounds = self.parenthesized_arguments()?;
             if bounds.is_empty() {
                 let peek = self.peek_full()?;
@@ -998,6 +991,7 @@ impl Parser<'_> {
         let mut constants = Vec::new();
         while !self.at(T![nl]) && !self.at(T![EOF]) {
             let name = self.identifier("variable name")?;
+            self.declare(&name, Declared::Const)?;
             self.consume(T![=])?;
             let literal = self.parse_const_literal()?;
             constants.push((name, literal));

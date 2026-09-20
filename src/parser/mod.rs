@@ -6,6 +6,7 @@ use std::iter::Peekable;
 pub mod ast;
 mod expressions;
 mod hierarchy;
+mod scope;
 pub mod visit;
 
 /// Why a script could not be parsed, and where.
@@ -92,6 +93,10 @@ pub struct Parser<'input> {
     last_end: u32,
     /// How many subs, functions or properties we are in the body of.
     procedure_depth: usize,
+    /// The names that are declared by the code outside of a procedure.
+    globals: scope::Scope,
+    /// The names that are declared in the procedure we are in the body of.
+    locals: Option<scope::Scope>,
 }
 
 impl<'input> Parser<'input> {
@@ -104,6 +109,8 @@ impl<'input> Parser<'input> {
             last_position: (0, 0),
             last_end: 0,
             procedure_depth: 0,
+            globals: scope::Scope::new(),
+            locals: None,
         }
     }
 }
@@ -1597,9 +1604,13 @@ Const a = 1			' some info
     #[test]
     fn test_keywords_as_declared_names() {
         for word in ["default", "error", "property", "step"] {
+            // one name can not be declared twice in the script, so there are two
+            let input = format!("Public {word}\nClass {word}2\nEnd Class");
+            let result = Parser::new(&input).file();
+            assert!(result.is_ok(), "{word}: {result:?}");
+
             let input = format!(
                 indoc! {"
-                    Public {w}
                     Sub {w}()
                         Const {w} = 1
                         ReDim {w}(2), other(3)
