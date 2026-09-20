@@ -1,11 +1,12 @@
 use crate::{T, lexer::*};
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 use std::iter::Peekable;
 
 pub mod ast;
 mod expressions;
 mod hierarchy;
 
+#[derive(Clone, PartialEq, Eq)]
 pub struct ParseError {
     message: String,
     line: usize,
@@ -20,7 +21,34 @@ impl ParseError {
             column,
         }
     }
+
+    /// Description of what went wrong, without the position.
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+
+    /// 1-indexed, 0 means unknown
+    pub fn line(&self) -> usize {
+        self.line
+    }
+
+    /// 1-indexed, 0 means unknown
+    pub fn column(&self) -> usize {
+        self.column
+    }
 }
+
+impl Display for ParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "line {}, column {}: {}",
+            self.line, self.column, self.message
+        )
+    }
+}
+
+impl std::error::Error for ParseError {}
 
 impl Debug for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -3103,5 +3131,20 @@ Const a = 1			' some info
                 })],
             }
         );
+    }
+
+    #[test]
+    fn test_parse_error_api() {
+        let error = Parser::new("x = 1\ny = )").file().unwrap_err();
+        assert_eq!(error.line(), 2);
+        assert_eq!(error.column(), 5);
+        assert_eq!(error.message(), "Unknown start of expression: )");
+        assert_eq!(
+            error.to_string(),
+            "line 2, column 5: Unknown start of expression: )"
+        );
+        // usable with `?` in functions returning a boxed error
+        let boxed: Box<dyn std::error::Error + Send + Sync> = error.clone().into();
+        assert_eq!(boxed.to_string(), error.to_string());
     }
 }
