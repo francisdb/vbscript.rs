@@ -104,14 +104,9 @@ pub fn walk_stmts<'ast, V: Visitor<'ast> + ?Sized>(visitor: &mut V, stmts: &'ast
 /// Visits the expressions and the nested statements of a statement, in source order.
 pub fn walk_stmt<'ast, V: Visitor<'ast> + ?Sized>(visitor: &mut V, stmt: &'ast Stmt) {
     match &stmt.node {
-        StmtKind::Dim { vars } => {
-            for (_, bounds) in vars {
-                walk_exprs(visitor, bounds);
-            }
-        }
-        StmtKind::ReDim { var_bounds, .. } => {
-            for (_, bounds) in var_bounds {
-                walk_exprs(visitor, bounds);
+        StmtKind::ReDim { vars, .. } => {
+            for var in vars {
+                walk_exprs(visitor, &var.bounds);
             }
         }
         StmtKind::Set { var, rhs } => {
@@ -204,7 +199,8 @@ pub fn walk_stmt<'ast, V: Visitor<'ast> + ?Sized>(visitor: &mut V, stmt: &'ast S
         StmtKind::Sub { body, .. } | StmtKind::Function { body, .. } => {
             walk_stmts(visitor, body);
         }
-        StmtKind::Const(_)
+        StmtKind::Dim { .. }
+        | StmtKind::Const(_)
         | StmtKind::Stop
         | StmtKind::ExitDo
         | StmtKind::ExitFor
@@ -271,7 +267,7 @@ mod test {
     #[test]
     fn visits_every_kind_of_statement_in_source_order() {
         let input = indoc! {"
-            Dim a(b1)
+            Dim a(1)
             ReDim c(b2)
             Set d = e
             f = (g + -h).i(j, , k)
@@ -313,7 +309,7 @@ mod test {
                 at
             End Sub
         "};
-        let expected = "b1 b2 d e f g h j k l m n o p q r t u v w y z aa ab ac ad ae af ag ah ai \
+        let expected = "b2 d e f g h j k l m n o p q r t u v w y z aa ab ac ad ae af ag ah ai \
                         aj ak al am an ao aq at";
         assert_eq!(idents(input).join(" "), expected);
     }

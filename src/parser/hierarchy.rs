@@ -3,8 +3,8 @@ use crate::lexer::{Span, Token, TokenKind};
 use crate::parser::ast::ExprKind::WithScoped;
 use crate::parser::ast::{
     Argument, ArgumentType, Case, DoLoopCheck, DoLoopCondition, ErrorClause, Expr, ExprKind,
-    FullIdent, Item, ItemKind, MemberAccess, MemberDefinitions, PropertyType, PropertyVisibility,
-    SetRhs, Stmt, StmtKind, VarDecl, Visibility,
+    FullIdent, Item, ItemKind, Lit, MemberAccess, MemberDefinitions, PropertyType,
+    PropertyVisibility, ReDimVar, SetRhs, Stmt, StmtKind, VarDecl, Visibility,
 };
 use crate::parser::{ParseError, Parser};
 use std::collections::HashSet;
@@ -435,18 +435,29 @@ where
             self.consume(T!['('])?;
             let mut dims = vec![];
             while !self.at(T![')']) {
-                let dim = self.consume(T![integer_literal])?;
-                let dim: usize = match self.text(&dim).parse() {
-                    Ok(dim) => dim,
-                    Err(_) => {
-                        return Err(ParseError::new(
-                            "Expected integer literal as bound",
-                            dim.line,
-                            dim.column,
-                        ));
+                // `cscript` on Windows only accepts an integer literal here, which can be a hex
+                // or an octal one, and fails with "Expected integer constant" for anything else
+                let token = *self.peek_full()?;
+                let bound = match token.kind {
+                    T![integer_literal] | T![hex_integer_literal] | T![octal_integer_literal] => {
+                        match self.literal()? {
+                            Some(Lit::Int(bound)) => bound.parse().ok(),
+                            _ => None,
+                        }
                     }
+                    _ => None,
                 };
-                dims.push(dim);
+                let Some(bound) = bound else {
+                    return Err(ParseError::new(
+                        format!(
+                            "Expected integer literal as bound, but found `{}`",
+                            self.text(&token)
+                        ),
+                        token.line,
+                        token.column,
+                    ));
+                };
+                dims.push(bound);
                 if self.at(T![,]) {
                     self.consume(T![,])?;
                 }
@@ -822,8 +833,8 @@ where
         let mut vars = Vec::new();
         while !self.at(T![nl]) && !self.at(T![EOF]) {
             let name = self.identifier("variable name")?;
-            let bounds = self.parenthesized_arguments()?;
-            vars.push((name, bounds));
+            let bounds = self.const_bounds()?;
+            vars.push(VarDecl { name, bounds });
             if self.at(T![,]) {
                 self.consume(T![,])?;
             } else {
@@ -840,21 +851,26 @@ where
             self.consume(T![preserve])?;
             preserve = true;
         }
-        let mut var_bounds = Vec::new();
-        let var_name = self.identifier("variable name")?;
-        let bounds = self.parenthesized_arguments()?;
-        var_bounds.push((var_name, bounds));
-        while self.at(T![,]) {
-            self.consume(T![,])?;
+        let mut vars = Vec::new();
+        loop {
             let name = self.identifier("variable name")?;
             let bounds = self.parenthesized_arguments()?;
-            var_bounds.push((name, bounds));
+            if bounds.is_empty() {
+                let peek = self.peek_full()?;
+                return Err(ParseError::new(
+                    format!("Expected the new bounds of `{name}`"),
+                    peek.line,
+                    peek.column,
+                ));
+            }
+            vars.push(ReDimVar { name, bounds });
+            if !self.at(T![,]) {
+                break;
+            }
+            self.consume(T![,])?;
         }
 
-        Ok(StmtKind::ReDim {
-            preserve,
-            var_bounds,
-        })
+        Ok(StmtKind::ReDim { preserve, vars })
     }
 
     fn statement_const(&mut self) -> Result<StmtKind, ParseError> {
