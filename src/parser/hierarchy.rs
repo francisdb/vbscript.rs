@@ -3,7 +3,7 @@ use crate::lexer::{Span, Token, TokenKind};
 use crate::parser::ast::ExprKind::WithScoped;
 use crate::parser::ast::{
     Argument, ArgumentType, Case, DoLoopCheck, DoLoopCondition, ErrorClause, Expr, ExprKind,
-    FullIdent, Item, ItemKind, Lit, MemberAccess, MemberDefinitions, PropertyType,
+    FullIdent, Item, ItemKind, Lit, MemberAccess, MemberDefinitions, Name, PropertyType,
     PropertyVisibility, ReDimVar, SetRhs, Stmt, StmtKind, VarDecl, Visibility,
 };
 use crate::parser::{ParseError, Parser};
@@ -509,7 +509,7 @@ where
         Ok(parameters)
     }
 
-    pub(crate) fn identifier(&mut self, item_type: &str) -> Result<String, ParseError> {
+    pub(crate) fn identifier(&mut self, item_type: &str) -> Result<Name, ParseError> {
         let id = self.identifier_opt()?;
         match id {
             None => {
@@ -527,13 +527,13 @@ where
         }
     }
 
-    pub(crate) fn identifier_opt(&mut self) -> Result<Option<String>, ParseError> {
+    pub(crate) fn identifier_opt(&mut self) -> Result<Option<Name>, ParseError> {
         let peek = self.peek_full()?;
         Ok(match peek.kind {
             // The keywords that `cscript` on Windows accepts as a name. `explicit` and
             // `erase` are valid as well but are no keywords for us.
             T![ident] | T![property] | T![step] | T![default] | T![error] => {
-                self.next().map(|token| self.text(&token).to_string())
+                self.next().map(|token| self.name(&token))
             }
             _ => None,
         })
@@ -543,7 +543,7 @@ where
     ///
     /// Keywords are valid here, as in `x.end`, but that needs no handling: the lexer does
     /// not look for keywords in the word that follows a dot.
-    pub(crate) fn member_identifier(&mut self) -> Result<String, ParseError> {
+    pub(crate) fn member_identifier(&mut self) -> Result<Name, ParseError> {
         let peek = self.peek_full()?;
         if peek.kind != T![ident] {
             return Err(ParseError::new(
@@ -556,7 +556,7 @@ where
             ));
         }
         let ident = self.consume(T![ident])?;
-        Ok(self.text(&ident).to_string())
+        Ok(self.name(&ident))
     }
 
     /// Parse a block of statements until we reach an `end` token.
@@ -1031,7 +1031,7 @@ where
             let element = self.next().ok_or_else(|| {
                 self.end_of_input_error("Expected loop variable after `for each`")
             })?;
-            let element_name = self.text(&element).to_string();
+            let element_name = self.name(&element);
             self.consume(T![in])?;
             let group = Box::new(self.expression()?);
             self.consume_line_delimiter()?;
@@ -1049,7 +1049,7 @@ where
             let counter = self
                 .next()
                 .ok_or_else(|| self.end_of_input_error("Expected loop counter after `for`"))?;
-            let counter_name = self.text(&counter).to_string();
+            let counter_name = self.name(&counter);
             self.consume(T![=])?;
             let start = self.expression()?;
             self.consume(T![to])?;
@@ -1206,7 +1206,7 @@ where
 
     fn optional_parenthesized_property_arguments(
         &mut self,
-    ) -> Result<Vec<(String, ArgumentType)>, ParseError> {
+    ) -> Result<Vec<(Name, ArgumentType)>, ParseError> {
         let mut property_arguments = Vec::new();
         if self.at(T!['(']) {
             self.consume(T!['('])?;
@@ -1279,7 +1279,7 @@ where
             // `Me` is an expression, it can not be declared as a name
             T![me] => {
                 let me = self.consume(T![me])?;
-                ExprKind::Ident(self.text(&me).to_string())
+                ExprKind::Ident(self.name(&me))
             }
             T![ident] | T![property] | T![step] | T![error] | T![default] => {
                 let ident = self.identifier("identifier base")?;
@@ -1298,8 +1298,7 @@ where
             T![new] => {
                 self.consume(T![new])?;
                 let ident = self.consume(T![ident])?;
-                let class_name = self.text(&ident);
-                ExprKind::New(class_name.to_string())
+                ExprKind::New(self.name(&ident))
             }
             T!['('] => {
                 self.consume(T!['('])?;
