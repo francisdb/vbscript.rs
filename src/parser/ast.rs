@@ -1,6 +1,7 @@
-use crate::lexer::TokenKind;
+use crate::lexer::{Span, TokenKind};
 use std::fmt;
-use std::fmt::Display;
+use std::fmt::{Debug, Display};
+use std::ops::Deref;
 
 /*
 
@@ -106,6 +107,71 @@ End Property
 
 */
 
+/// A node of the syntax tree together with the part of the source it was parsed from.
+///
+/// The span is where a node came from, it is not part of what the node means. That is why
+/// it is ignored when comparing nodes and left out of the `Debug` output: two trees parsed
+/// from differently formatted sources are equal if they have the same structure, and a
+/// tree that is built by hand, with [`Span::default`] everywhere, is equal to the parsed
+/// one. Compare the `span` fields if the position matters.
+#[derive(Clone)]
+pub struct Spanned<T> {
+    pub node: T,
+    /// Byte range in the source, empty for nodes that were not parsed from a source.
+    pub span: Span,
+}
+
+impl<T> Spanned<T> {
+    pub fn with_span(node: T, span: Span) -> Self {
+        Spanned { node, span }
+    }
+}
+
+/// A node that was not parsed from a source, it has an empty span.
+impl<T> From<T> for Spanned<T> {
+    fn from(node: T) -> Self {
+        Spanned {
+            node,
+            span: Span::default(),
+        }
+    }
+}
+
+impl<T> Deref for Spanned<T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        &self.node
+    }
+}
+
+impl<T: PartialEq> PartialEq for Spanned<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.node == other.node
+    }
+}
+
+impl<T: Debug> Debug for Spanned<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.node.fmt(f)
+    }
+}
+
+impl<T: Display> Display for Spanned<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.node.fmt(f)
+    }
+}
+
+/// An expression, see [`ExprKind`].
+pub type Expr = Spanned<ExprKind>;
+
+/// A statement, see [`StmtKind`].
+pub type Stmt = Spanned<StmtKind>;
+
+/// A top-level item of a script, see [`ItemKind`].
+pub type Item = Spanned<ItemKind>;
+
 /// An identifier with optional property accesses
 /// eg `a.b.c`, `a.b(1).c`, `a.b(1)(2).c` or `a.b(1,2).c(3)`
 ///
@@ -130,7 +196,7 @@ impl Display for FullIdent {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Expr {
+pub enum ExprKind {
     Literal(Lit),
     Ident(String),
     PrefixOp {
@@ -160,42 +226,44 @@ pub enum Expr {
 
 impl Expr {
     pub fn ident(name: impl Into<String>) -> Self {
-        Expr::Ident(name.into())
+        ExprKind::Ident(name.into()).into()
     }
 
     pub fn int(i: isize) -> Self {
-        Expr::Literal(Lit::Int(i.to_string()))
+        ExprKind::Literal(Lit::Int(i.to_string())).into()
     }
 
     pub fn int_str(i: impl Into<String>) -> Self {
-        Expr::Literal(Lit::Int(i.into()))
+        ExprKind::Literal(Lit::Int(i.into())).into()
     }
 
     pub fn bool(b: bool) -> Self {
-        Expr::Literal(Lit::Bool(b))
+        ExprKind::Literal(Lit::Bool(b)).into()
     }
 
     pub fn str(s: impl Into<String>) -> Self {
-        Expr::Literal(Lit::Str(s.into()))
+        ExprKind::Literal(Lit::Str(s.into())).into()
     }
 
     pub fn new(name: impl Into<String>) -> Self {
-        Expr::New(name.into())
+        ExprKind::New(name.into()).into()
     }
 
     pub fn member(base: Expr, property: impl Into<String>) -> Self {
-        Expr::MemberExpression {
+        ExprKind::MemberExpression {
             base: Box::new(base),
             property: property.into(),
         }
+        .into()
     }
 
     pub fn fn_application(callee: Expr, args: Vec<Expr>) -> Self {
         let args = args.into_iter().map(Some).collect();
-        Expr::FnApplication {
+        ExprKind::FnApplication {
             callee: Box::new(callee),
             args,
         }
+        .into()
     }
 }
 
@@ -256,7 +324,7 @@ pub struct Case {
 // Statements
 // https://learn.microsoft.com/en-us/previous-versions/7aw9cadb(v=vs.85)
 #[derive(Debug, Clone, PartialEq)]
-pub enum Stmt {
+pub enum StmtKind {
     Dim {
         vars: Vec<(String, Vec<Expr>)>,
     },
@@ -401,7 +469,7 @@ pub struct MemberDefinitions {
 pub type ClassDim = Vec<(String, Option<Vec<usize>>)>;
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Item {
+pub enum ItemKind {
     // https://learn.microsoft.com/en-us/previous-versions/windows/internet-explorer/ie-developer/scripting-articles/bw9t3484%28v%3Dvs.84%29
     OptionExplicit,
     // https://learn.microsoft.com/en-us/previous-versions//4ah5852c(v=vs.85)
@@ -431,35 +499,37 @@ pub enum Item {
 
 impl Stmt {
     pub fn dim(var_name: impl Into<String>) -> Self {
-        Stmt::Dim {
+        StmtKind::Dim {
             vars: vec![(var_name.into(), Vec::new())],
         }
+        .into()
     }
 
     pub fn const_(var_name: impl Into<String>, value: Lit) -> Self {
-        Stmt::Const(vec![(var_name.into(), value)])
+        StmtKind::Const(vec![(var_name.into(), value)]).into()
     }
 
     pub fn assignment(ident: FullIdent, value: Expr) -> Self {
-        Stmt::Assignment {
+        StmtKind::Assignment {
             full_ident: ident,
             value: Box::new(value),
         }
+        .into()
     }
 }
 
-impl fmt::Display for Expr {
+impl fmt::Display for ExprKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Expr::Literal(lit) => write!(f, "{lit}"),
-            Expr::Ident(ident) => write!(f, "{ident}"),
-            Expr::WithScoped => write!(f, "."),
-            Expr::PrefixOp { op, expr } => write!(f, "({op} {expr})"),
-            Expr::InfixOp { op, lhs, rhs } => write!(f, "({lhs} {op} {rhs})"),
-            // Expr::PostfixOp { op, expr } =>
+            ExprKind::Literal(lit) => write!(f, "{lit}"),
+            ExprKind::Ident(ident) => write!(f, "{ident}"),
+            ExprKind::WithScoped => write!(f, "."),
+            ExprKind::PrefixOp { op, expr } => write!(f, "({op} {expr})"),
+            ExprKind::InfixOp { op, lhs, rhs } => write!(f, "({lhs} {op} {rhs})"),
+            // ExprKind::PostfixOp { op, expr } =>
             //     write!(f, "({} {})", expr, op),
-            Expr::New(name) => write!(f, "New {name}"),
-            Expr::FnApplication { callee, args } => {
+            ExprKind::New(name) => write!(f, "New {name}"),
+            ExprKind::FnApplication { callee, args } => {
                 write!(f, "{callee}(")?;
                 let len = args.len();
                 for (i, arg) in args.iter().enumerate() {
@@ -472,7 +542,7 @@ impl fmt::Display for Expr {
                 }
                 write!(f, ")")
             }
-            Expr::MemberExpression { base, property } => write!(f, "{base}.{property}"),
+            ExprKind::MemberExpression { base, property } => write!(f, "{base}.{property}"),
         }
     }
 }

@@ -2,7 +2,7 @@
 
 use crate::T;
 use crate::lexer::{Token, TokenKind};
-use crate::parser::ast::{Expr, Lit};
+use crate::parser::ast::{Expr, ExprKind, Lit};
 use crate::parser::{ParseError, Parser};
 
 impl<I> Parser<'_, I>
@@ -44,6 +44,7 @@ where
             Some(expr) => expr,
             None => self.parse_expression_lhs()?,
         };
+        let start = lhs.span.start;
         loop {
             let op = match self.peek() {
                 op @ T![+]
@@ -90,10 +91,11 @@ where
             // highest binding power
             if op == T!['('] {
                 let args = self.parenthesized_optional_arguments()?;
-                lhs = Expr::FnApplication {
+                let application = ExprKind::FnApplication {
                     callee: Box::new(lhs),
                     args,
                 };
+                lhs = self.spanned(application, start);
                 continue;
             }
 
@@ -103,10 +105,11 @@ where
             if op == T![_.] {
                 self.consume(T![_.])?;
                 let property = self.member_identifier()?;
-                lhs = Expr::MemberExpression {
+                let member = ExprKind::MemberExpression {
                     base: Box::new(lhs),
                     property,
                 };
+                lhs = self.spanned(member, start);
                 continue;
             }
 
@@ -119,11 +122,12 @@ where
 
                 self.consume(op)?;
                 let rhs = self.parse_expression(right_binding_power)?;
-                lhs = Expr::InfixOp {
+                let infix = ExprKind::InfixOp {
                     op,
                     lhs: Box::new(lhs),
                     rhs: Box::new(rhs),
                 };
+                lhs = self.spanned(infix, start);
                 // parsed an operator --> go round the loop again
                 continue;
             } else {
@@ -265,21 +269,24 @@ where
     }
 
     fn parse_expression_lhs(&mut self) -> Result<Expr, ParseError> {
+        let start = self.start();
         if let Some(literal) = self.literal()? {
-            return Ok(Expr::Literal(literal));
+            return Ok(self.spanned(ExprKind::Literal(literal), start));
         }
 
         if let Some(ident) = self.identifier_opt()? {
-            return Ok(Expr::ident(ident));
+            return Ok(self.spanned(ExprKind::Ident(ident), start));
         }
 
-        let res = match self.peek() {
+        let kind = match self.peek() {
             T![.] => {
+                // the object of the with block is implied, it has an empty span
+                let base = self.spanned(ExprKind::WithScoped, start);
                 self.consume(T![.])?;
                 let ident = self.consume(T![ident])?;
                 let property = self.text(&ident).to_string();
-                Expr::MemberExpression {
-                    base: Box::new(Expr::WithScoped),
+                ExprKind::MemberExpression {
+                    base: Box::new(base),
                     property,
                 }
             }
@@ -287,7 +294,7 @@ where
                 self.consume(T![new])?;
                 let ident = self.consume(T![ident])?;
                 let class_name = self.text(&ident);
-                Expr::new(class_name)
+                ExprKind::New(class_name.to_string())
             }
             T!['('] => {
                 // There is no AST node for grouped expressions.
@@ -295,14 +302,15 @@ where
                 self.consume(T!['('])?;
                 let expr = self.parse_expression(0)?;
                 self.consume(T![')'])?;
-                expr
+                // the parentheses are part of the expression they group
+                return Ok(self.spanned(expr.node, start));
             }
             op @ T![+] | op @ T![-] | op @ T![not] => {
                 self.consume(op)?;
                 let ((), right_binding_power) = op.prefix_binding_power();
                 // NEW!
                 let expr = self.parse_expression(right_binding_power)?;
-                Expr::PrefixOp {
+                ExprKind::PrefixOp {
                     op,
                     expr: Box::new(expr),
                 }
@@ -316,7 +324,7 @@ where
                 ));
             }
         };
-        Ok(res)
+        Ok(self.spanned(kind, start))
     }
 
     pub(crate) fn parenthesized_arguments(&mut self) -> Result<Vec<Expr>, ParseError> {
@@ -424,7 +432,7 @@ fn radix_literal_value(digits: &str, radix: u32, long: bool) -> Option<isize> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::parser::ast::Expr::{Literal, MemberExpression};
+    use crate::parser::ast::ExprKind::{Literal, MemberExpression};
     use pretty_assertions::assert_eq;
 
     fn parse_expression(input: &str) -> Expr {
@@ -438,15 +446,19 @@ mod test {
         let expr = parse_expression(input);
         assert_eq!(
             expr,
-            Expr::InfixOp {
+            ExprKind::InfixOp {
                 op: T![+],
                 lhs: Box::new(Expr::int(1)),
-                rhs: Box::new(Expr::InfixOp {
-                    op: T![*],
-                    lhs: Box::new(Expr::int(2)),
-                    rhs: Box::new(Expr::int(3)),
-                }),
+                rhs: Box::new(
+                    ExprKind::InfixOp {
+                        op: T![*],
+                        lhs: Box::new(Expr::int(2)),
+                        rhs: Box::new(Expr::int(3)),
+                    }
+                    .into()
+                ),
             }
+            .into()
         );
     }
 
@@ -456,15 +468,19 @@ mod test {
         let expr = parse_expression(input);
         assert_eq!(
             expr,
-            Expr::InfixOp {
+            ExprKind::InfixOp {
                 op: T![*],
-                lhs: Box::new(Expr::InfixOp {
-                    op: T![+],
-                    lhs: Box::new(Expr::int(1)),
-                    rhs: Box::new(Expr::int(2)),
-                }),
+                lhs: Box::new(
+                    ExprKind::InfixOp {
+                        op: T![+],
+                        lhs: Box::new(Expr::int(1)),
+                        rhs: Box::new(Expr::int(2)),
+                    }
+                    .into()
+                ),
                 rhs: Box::new(Expr::int(3)),
             }
+            .into()
         );
     }
 
@@ -474,11 +490,12 @@ mod test {
         let expr = parse_expression(input);
         assert_eq!(
             expr,
-            Expr::InfixOp {
+            ExprKind::InfixOp {
                 op: T![and],
                 lhs: Box::new(Expr::ident("col")),
                 rhs: Box::new(Expr::int(0xFF)),
             }
+            .into()
         );
     }
 
@@ -489,11 +506,12 @@ mod test {
         let expr = parse_expression(input);
         assert_eq!(
             expr,
-            Expr::InfixOp {
+            ExprKind::InfixOp {
                 op: T![and],
                 lhs: Box::new(Expr::ident("col")),
                 rhs: Box::new(Expr::int(0o17)),
             }
+            .into()
         );
     }
 
@@ -504,11 +522,12 @@ mod test {
         let expr = parse_expression(input);
         assert_eq!(
             expr,
-            Expr::InfixOp {
+            ExprKind::InfixOp {
                 op: T![and],
                 lhs: Box::new(Expr::ident("col")),
                 rhs: Box::new(Expr::int(0o10000000)),
             }
+            .into()
         );
     }
 
@@ -529,11 +548,12 @@ mod test {
         let expr = parse_expression(input);
         assert_eq!(
             expr,
-            Expr::InfixOp {
+            ExprKind::InfixOp {
                 op: T![is],
                 lhs: Box::new(Expr::ident("varValue")),
-                rhs: Box::new(Literal(Lit::Nothing)),
+                rhs: Box::new(Literal(Lit::Nothing).into()),
             }
+            .into()
         );
     }
 
@@ -543,14 +563,18 @@ mod test {
         let expr = parse_expression(input);
         assert_eq!(
             expr,
-            Expr::PrefixOp {
+            ExprKind::PrefixOp {
                 op: T![not],
-                expr: Box::new(Expr::InfixOp {
-                    op: T![is],
-                    lhs: Box::new(Expr::ident("varValue")),
-                    rhs: Box::new(Literal(Lit::Nothing)),
-                }),
+                expr: Box::new(
+                    ExprKind::InfixOp {
+                        op: T![is],
+                        lhs: Box::new(Expr::ident("varValue")),
+                        rhs: Box::new(Literal(Lit::Nothing).into()),
+                    }
+                    .into()
+                ),
             }
+            .into()
         );
     }
 
@@ -560,11 +584,12 @@ mod test {
         let expr = parse_expression(input);
         assert_eq!(
             expr,
-            Expr::InfixOp {
+            ExprKind::InfixOp {
                 op: T![=],
                 lhs: Box::new(Expr::ident("varValue")),
                 rhs: Box::new(Expr::ident("varValue2")),
             }
+            .into()
         );
     }
 
@@ -574,15 +599,19 @@ mod test {
         let expr = parse_expression(input);
         assert_eq!(
             expr,
-            Expr::InfixOp {
+            ExprKind::InfixOp {
                 op: T![&],
-                lhs: Box::new(Expr::InfixOp {
-                    op: T![&],
-                    lhs: Box::new(Literal(Lit::str("Hello"))),
-                    rhs: Box::new(Literal(Lit::str(" "))),
-                }),
+                lhs: Box::new(
+                    ExprKind::InfixOp {
+                        op: T![&],
+                        lhs: Box::new(Literal(Lit::str("Hello")).into()),
+                        rhs: Box::new(Literal(Lit::str(" ")).into()),
+                    }
+                    .into()
+                ),
                 rhs: Box::new(Expr::ident("name")),
             }
+            .into()
         );
     }
 
@@ -592,14 +621,18 @@ mod test {
         let expr = parse_expression(input);
         assert_eq!(
             expr,
-            Expr::InfixOp {
+            ExprKind::InfixOp {
                 op: T![=],
-                lhs: Box::new(MemberExpression {
-                    base: Box::new(Expr::ident("Me")),
-                    property: "Name".to_string(),
-                }),
-                rhs: Box::new(Literal(Lit::str("John"))),
+                lhs: Box::new(
+                    MemberExpression {
+                        base: Box::new(Expr::ident("Me")),
+                        property: "Name".to_string(),
+                    }
+                    .into()
+                ),
+                rhs: Box::new(Literal(Lit::str("John")).into()),
             }
+            .into()
         );
     }
 
@@ -609,11 +642,12 @@ mod test {
         let expr = parse_expression(input);
         assert_eq!(
             expr,
-            Expr::InfixOp {
+            ExprKind::InfixOp {
                 op: T![&],
                 lhs: Box::new(Expr::ident("test")),
-                rhs: Box::new(Literal(Lit::str("Hello"))),
+                rhs: Box::new(Literal(Lit::str("Hello")).into()),
             }
+            .into()
         );
     }
 
@@ -635,14 +669,18 @@ mod test {
         let expr = parse_expression(input);
         assert_eq!(
             expr,
-            Expr::InfixOp {
+            ExprKind::InfixOp {
                 op: T![=],
-                lhs: Box::new(MemberExpression {
-                    base: Box::new(Expr::ident("foo")),
-                    property: "enabled".to_string(),
-                }),
-                rhs: Box::new(Literal(Lit::Bool(false))),
+                lhs: Box::new(
+                    MemberExpression {
+                        base: Box::new(Expr::ident("foo")),
+                        property: "enabled".to_string(),
+                    }
+                    .into()
+                ),
+                rhs: Box::new(Literal(Lit::Bool(false)).into()),
             }
+            .into()
         );
     }
 }

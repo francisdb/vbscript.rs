@@ -1,3 +1,4 @@
+use crate::parser::ast::Spanned;
 use crate::{T, lexer::*};
 use std::fmt::{Debug, Display};
 use std::iter::Peekable;
@@ -80,6 +81,8 @@ where
     depth: usize,
     /// Line and column of the last token that was consumed, (0, 0) if there was none yet.
     last_position: (usize, usize),
+    /// Offset of the end of the last token that was consumed.
+    last_end: u32,
 }
 
 impl<'input> Parser<'input, TokenIter<'input>> {
@@ -89,6 +92,7 @@ impl<'input> Parser<'input, TokenIter<'input>> {
             tokens: TokenIter::new(input).peekable(),
             depth: 0,
             last_position: (0, 0),
+            last_end: 0,
         }
     }
 }
@@ -153,8 +157,29 @@ where
         let token = self.tokens.next();
         if let Some(token) = &token {
             self.last_position = (token.line, token.column);
+            // a node does not include the delimiter that follows it
+            if !matches!(token.kind, T![nl] | T![:]) {
+                self.last_end = token.span.end;
+            }
         }
         token
+    }
+
+    /// The offset where the next token starts, to be used as the start of the span of the
+    /// node we are about to parse.
+    pub(crate) fn start(&mut self) -> u32 {
+        self.tokens
+            .peek()
+            .map_or(self.last_end, |token| token.span.start)
+    }
+
+    /// A node that spans from `start` to the end of the last token that was consumed.
+    pub(crate) fn spanned<T>(&self, node: T, start: u32) -> Spanned<T> {
+        let span = Span {
+            start,
+            end: self.last_end.max(start),
+        };
+        Spanned::with_span(node, span)
     }
 
     /// An error for when there are no tokens left, positioned at the last token we have seen
@@ -286,12 +311,12 @@ impl Iterator for TokenIter<'_> {
 mod test {
     use super::*;
     use crate::parser::ast::ErrorClause::{Goto0, ResumeNext};
-    use crate::parser::ast::Expr::{InfixOp, WithScoped};
-    use crate::parser::ast::Stmt::OnError;
+    use crate::parser::ast::ExprKind::{InfixOp, WithScoped};
+    use crate::parser::ast::StmtKind::OnError;
     use crate::parser::ast::{
-        Argument, ArgumentType, Case, DoLoopCheck, DoLoopCondition, Expr, FullIdent, Item, Lit,
-        MemberAccess, MemberDefinitions, PropertyType, PropertyVisibility, SetRhs, Stmt,
-        Visibility,
+        Argument, ArgumentType, Case, DoLoopCheck, DoLoopCondition, Expr, ExprKind, FullIdent,
+        Item, ItemKind, Lit, MemberAccess, MemberDefinitions, PropertyType, PropertyVisibility,
+        SetRhs, Stmt, StmtKind, Visibility,
     };
     use indoc::indoc;
     use pretty_assertions::assert_eq;
@@ -322,9 +347,15 @@ mod test {
         let file = parse_file(input);
         assert_eq!(
             file,
-            vec![Item::Statement(Stmt::Dim {
-                vars: vec![("x".to_string(), vec![]), ("y".to_string(), vec![]),],
-            }),]
+            vec![
+                ItemKind::Statement(
+                    StmtKind::Dim {
+                        vars: vec![("x".to_string(), vec![]), ("y".to_string(), vec![]),],
+                    }
+                    .into()
+                )
+                .into(),
+            ]
         );
     }
 
@@ -380,7 +411,7 @@ Const a = 1			' some info
         let expr = parse("42");
         assert_eq!(expr, Expr::int(42));
         let expr = parse("  2.7768");
-        assert_eq!(expr, Expr::Literal(Lit::Float(2.7768)));
+        assert_eq!(expr, ExprKind::Literal(Lit::Float(2.7768)).into());
         let expr = parse(r#""I am a String!""#);
         assert_eq!(expr, Expr::str("I am a String!".to_string()));
         let expr = parse("foo");
@@ -388,26 +419,29 @@ Const a = 1			' some info
         let expr = parse("bar (  x, 2)");
         assert_eq!(
             expr,
-            Expr::FnApplication {
+            ExprKind::FnApplication {
                 callee: Box::new(Expr::ident("bar")),
                 args: vec![Some(Expr::ident("x")), Some(Expr::int(2))],
             }
+            .into()
         );
         let expr = parse("Not is_visible");
         assert_eq!(
             expr,
-            Expr::PrefixOp {
+            ExprKind::PrefixOp {
                 op: T![not],
                 expr: Box::new(Expr::ident("is_visible")),
             }
+            .into()
         );
         let expr = parse("(-13)");
         assert_eq!(
             expr,
-            Expr::PrefixOp {
+            ExprKind::PrefixOp {
                 op: T![-],
                 expr: Box::new(Expr::int(13)),
             }
+            .into()
         );
     }
 
@@ -437,24 +471,34 @@ Const a = 1			' some info
         let expr = parse("min ( test + 4 , sin(2*PI ))");
         assert_eq!(
             expr,
-            Expr::FnApplication {
+            ExprKind::FnApplication {
                 callee: Box::new(Expr::ident("min")),
                 args: vec![
-                    Some(InfixOp {
-                        op: T![+],
-                        lhs: Box::new(Expr::ident("test")),
-                        rhs: Box::new(Expr::int(4)),
-                    }),
-                    Some(Expr::FnApplication {
-                        callee: Box::new(Expr::ident("sin")),
-                        args: vec![Some(InfixOp {
-                            op: T![*],
-                            lhs: Box::new(Expr::int(2)),
-                            rhs: Box::new(Expr::ident("PI")),
-                        })],
-                    }),
+                    Some(
+                        InfixOp {
+                            op: T![+],
+                            lhs: Box::new(Expr::ident("test")),
+                            rhs: Box::new(Expr::int(4)),
+                        }
+                        .into()
+                    ),
+                    Some(
+                        ExprKind::FnApplication {
+                            callee: Box::new(Expr::ident("sin")),
+                            args: vec![Some(
+                                InfixOp {
+                                    op: T![*],
+                                    lhs: Box::new(Expr::int(2)),
+                                    rhs: Box::new(Expr::ident("PI")),
+                                }
+                                .into()
+                            )],
+                        }
+                        .into()
+                    ),
                 ],
             }
+            .into()
         );
         assert_eq!(expr.to_string(), "min((test + 4), sin((2 * PI)))");
     }
@@ -469,19 +513,26 @@ Const a = 1			' some info
         let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
-            Stmt::IfStmt {
-                condition: Box::new(InfixOp {
-                    op: T![>],
-                    lhs: Box::new(Expr::ident("x")),
-                    rhs: Box::new(Expr::int(2)),
-                }),
-                body: vec![Stmt::Assignment {
-                    full_ident: FullIdent::ident("x"),
-                    value: Box::new(Expr::int(4)),
-                }],
+            StmtKind::IfStmt {
+                condition: Box::new(
+                    InfixOp {
+                        op: T![>],
+                        lhs: Box::new(Expr::ident("x")),
+                        rhs: Box::new(Expr::int(2)),
+                    }
+                    .into()
+                ),
+                body: vec![
+                    StmtKind::Assignment {
+                        full_ident: FullIdent::ident("x"),
+                        value: Box::new(Expr::int(4)),
+                    }
+                    .into()
+                ],
                 elseif_statements: vec![],
                 else_stmt: None,
             }
+            .into()
         );
     }
 
@@ -495,21 +546,31 @@ Const a = 1			' some info
         let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
-            Stmt::WhileStmt {
-                condition: Box::new(InfixOp {
-                    op: T![<],
-                    lhs: Box::new(Expr::ident("x")),
-                    rhs: Box::new(Expr::int(5)),
-                }),
-                body: vec![Stmt::Assignment {
-                    full_ident: FullIdent::ident("x"),
-                    value: Box::new(InfixOp {
-                        op: T![+],
+            StmtKind::WhileStmt {
+                condition: Box::new(
+                    InfixOp {
+                        op: T![<],
                         lhs: Box::new(Expr::ident("x")),
-                        rhs: Box::new(Expr::int(1)),
-                    }),
-                },],
+                        rhs: Box::new(Expr::int(5)),
+                    }
+                    .into()
+                ),
+                body: vec![
+                    StmtKind::Assignment {
+                        full_ident: FullIdent::ident("x"),
+                        value: Box::new(
+                            InfixOp {
+                                op: T![+],
+                                lhs: Box::new(Expr::ident("x")),
+                                rhs: Box::new(Expr::int(1)),
+                            }
+                            .into()
+                        ),
+                    }
+                    .into(),
+                ],
             }
+            .into()
         );
     }
 
@@ -519,24 +580,42 @@ Const a = 1			' some info
         let items = parse_file(input);
         assert_eq!(
             items,
-            vec![Item::Statement(Stmt::WhileStmt {
-                condition: Box::new(InfixOp {
-                    op: T![=],
-                    lhs: Box::new(Expr::ident("skipIdx")),
-                    rhs: Box::new(Expr::ident("skipIdx2")),
-                }),
-                body: vec![Stmt::Assignment {
-                    full_ident: FullIdent::ident("skipIdx2"),
-                    value: Box::new(Expr::FnApplication {
-                        callee: Box::new(Expr::ident("Int")),
-                        args: vec![Some(InfixOp {
-                            op: T![*],
-                            lhs: Box::new(Expr::ident("Rnd")),
-                            rhs: Box::new(Expr::int(6)),
-                        })],
-                    }),
-                },],
-            }),]
+            vec![
+                ItemKind::Statement(
+                    StmtKind::WhileStmt {
+                        condition: Box::new(
+                            InfixOp {
+                                op: T![=],
+                                lhs: Box::new(Expr::ident("skipIdx")),
+                                rhs: Box::new(Expr::ident("skipIdx2")),
+                            }
+                            .into()
+                        ),
+                        body: vec![
+                            StmtKind::Assignment {
+                                full_ident: FullIdent::ident("skipIdx2"),
+                                value: Box::new(
+                                    ExprKind::FnApplication {
+                                        callee: Box::new(Expr::ident("Int")),
+                                        args: vec![Some(
+                                            InfixOp {
+                                                op: T![*],
+                                                lhs: Box::new(Expr::ident("Rnd")),
+                                                rhs: Box::new(Expr::int(6)),
+                                            }
+                                            .into()
+                                        )],
+                                    }
+                                    .into()
+                                ),
+                            }
+                            .into(),
+                        ],
+                    }
+                    .into()
+                )
+                .into(),
+            ]
         );
     }
 
@@ -550,20 +629,27 @@ Const a = 1			' some info
         let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
-            Stmt::ForStmt {
+            StmtKind::ForStmt {
                 counter: "i".to_string(),
                 start: Box::new(Expr::int(1)),
                 end: Box::new(Expr::int(10)),
                 step: None,
-                body: vec![Stmt::Assignment {
-                    full_ident: FullIdent::ident("x"),
-                    value: Box::new(InfixOp {
-                        op: T![+],
-                        lhs: Box::new(Expr::ident("x")),
-                        rhs: Box::new(Expr::ident("i")),
-                    }),
-                }],
+                body: vec![
+                    StmtKind::Assignment {
+                        full_ident: FullIdent::ident("x"),
+                        value: Box::new(
+                            InfixOp {
+                                op: T![+],
+                                lhs: Box::new(Expr::ident("x")),
+                                rhs: Box::new(Expr::ident("i")),
+                            }
+                            .into()
+                        ),
+                    }
+                    .into()
+                ],
             }
+            .into()
         );
     }
 
@@ -578,32 +664,41 @@ Const a = 1			' some info
         let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
-            Stmt::ForStmt {
+            StmtKind::ForStmt {
                 counter: "i".to_string(),
                 start: Box::new(Expr::int(1)),
                 end: Box::new(Expr::int(10)),
                 step: None,
                 body: vec![
-                    Stmt::Assignment {
+                    StmtKind::Assignment {
                         full_ident: FullIdent::ident("x"),
-                        value: Box::new(InfixOp {
-                            op: T![*],
-                            lhs: Box::new(Expr::ident("x")),
-                            rhs: Box::new(Expr::ident("i")),
-                        }),
-                    },
-                    Stmt::IfStmt {
-                        condition: Box::new(InfixOp {
-                            op: T![>],
-                            lhs: Box::new(Expr::ident("x")),
-                            rhs: Box::new(Expr::int(10)),
-                        }),
-                        body: vec![Stmt::ExitFor],
+                        value: Box::new(
+                            InfixOp {
+                                op: T![*],
+                                lhs: Box::new(Expr::ident("x")),
+                                rhs: Box::new(Expr::ident("i")),
+                            }
+                            .into()
+                        ),
+                    }
+                    .into(),
+                    StmtKind::IfStmt {
+                        condition: Box::new(
+                            InfixOp {
+                                op: T![>],
+                                lhs: Box::new(Expr::ident("x")),
+                                rhs: Box::new(Expr::int(10)),
+                            }
+                            .into()
+                        ),
+                        body: vec![StmtKind::ExitFor.into()],
                         elseif_statements: vec![],
                         else_stmt: None,
-                    },
+                    }
+                    .into(),
                 ],
             }
+            .into()
         );
     }
 
@@ -617,13 +712,19 @@ Const a = 1			' some info
         let file = parse_file(input);
         assert_eq!(
             file,
-            vec![Item::Statement(Stmt::ForStmt {
-                counter: "i".to_string(),
-                start: Box::new(Expr::ident("For_nr")),
-                end: Box::new(Expr::ident("Next_nr")),
-                step: Some(Box::new(Expr::ident("Bdir"))),
-                body: vec![],
-            }),]
+            vec![
+                ItemKind::Statement(
+                    StmtKind::ForStmt {
+                        counter: "i".to_string(),
+                        start: Box::new(Expr::ident("For_nr")),
+                        end: Box::new(Expr::ident("Next_nr")),
+                        step: Some(Box::new(Expr::ident("Bdir"))),
+                        body: vec![],
+                    }
+                    .into()
+                )
+                .into(),
+            ]
         );
     }
 
@@ -634,7 +735,7 @@ Const a = 1			' some info
         #[rustfmt::skip]
         assert_eq!(
             stmt,
-            Stmt::ForStmt {
+            StmtKind::ForStmt {
                 counter: "x".to_string(),
                 start: Box::new(Expr::int(1)),
                 end: Box::new(InfixOp {
@@ -644,16 +745,16 @@ Const a = 1			' some info
                         vec![Expr::ident("currentplayer")])
                     ),
                     rhs: Box::new(Expr::int(1)),
-                }),
+                }.into()),
                 step: None,
-                body: vec![Stmt::Assignment {
+                body: vec![StmtKind::Assignment {
                     full_ident: FullIdent::new(Expr::fn_application(
                         Expr::ident("Blink"),
                         vec![Expr::ident("x"), Expr::int(1)],
                     )),
                     value: Box::new(Expr::int(1)),
-                },],
-            }
+                }.into(),],
+            }.into()
         );
     }
 
@@ -667,17 +768,24 @@ Const a = 1			' some info
         let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
-            Stmt::ForEachStmt {
+            StmtKind::ForEachStmt {
                 element: "dog".to_string(),
                 group: Box::new(Expr::ident("dogs")),
-                body: vec![Stmt::Assignment {
-                    full_ident: FullIdent(Box::new(Expr::MemberExpression {
-                        base: Box::new(Expr::ident("dog")),
-                        property: "visible".to_string(),
-                    })),
-                    value: Box::new(Expr::Literal(Lit::Bool(true))),
-                }],
+                body: vec![
+                    StmtKind::Assignment {
+                        full_ident: FullIdent(Box::new(
+                            ExprKind::MemberExpression {
+                                base: Box::new(Expr::ident("dog")),
+                                property: "visible".to_string(),
+                            }
+                            .into()
+                        )),
+                        value: Box::new(ExprKind::Literal(Lit::Bool(true)).into()),
+                    }
+                    .into()
+                ],
             }
+            .into()
         );
     }
 
@@ -689,20 +797,23 @@ Const a = 1			' some info
         let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
-            Stmt::ForEachStmt {
+            StmtKind::ForEachStmt {
                 element: "dog".to_string(),
                 group: Box::new(Expr::ident("dogs")),
                 body: vec![
-                    Stmt::Assignment {
+                    StmtKind::Assignment {
                         full_ident: FullIdent::new(Expr::member(Expr::ident("dog"), "volume"),),
                         value: Box::new(Expr::int(0)),
-                    },
-                    Stmt::Assignment {
+                    }
+                    .into(),
+                    StmtKind::Assignment {
                         full_ident: FullIdent::new(Expr::member(Expr::ident("dog"), "visible"),),
-                        value: Box::new(Expr::Literal(Lit::Bool(true))),
-                    },
+                        value: Box::new(ExprKind::Literal(Lit::Bool(true)).into()),
+                    }
+                    .into(),
                 ],
             }
+            .into()
         );
     }
 
@@ -717,22 +828,32 @@ Const a = 1			' some info
         let item = parser.item().unwrap();
         assert_eq!(
             item,
-            Item::Statement(Stmt::Function {
-                visibility: Visibility::Default,
-                name: "add".to_string(),
-                parameters: vec![
-                    Argument::ByVal("a".to_string()),
-                    Argument::ByVal("b".to_string())
-                ],
-                body: vec![Stmt::Assignment {
-                    full_ident: FullIdent::ident("add"),
-                    value: Box::new(InfixOp {
-                        op: T![+],
-                        lhs: Box::new(Expr::ident("a")),
-                        rhs: Box::new(Expr::ident("b")),
-                    }),
-                }],
-            })
+            ItemKind::Statement(
+                StmtKind::Function {
+                    visibility: Visibility::Default,
+                    name: "add".to_string(),
+                    parameters: vec![
+                        Argument::ByVal("a".to_string()),
+                        Argument::ByVal("b".to_string())
+                    ],
+                    body: vec![
+                        StmtKind::Assignment {
+                            full_ident: FullIdent::ident("add"),
+                            value: Box::new(
+                                InfixOp {
+                                    op: T![+],
+                                    lhs: Box::new(Expr::ident("a")),
+                                    rhs: Box::new(Expr::ident("b")),
+                                }
+                                .into()
+                            ),
+                        }
+                        .into()
+                    ],
+                }
+                .into()
+            )
+            .into()
         );
     }
 
@@ -747,7 +868,7 @@ Const a = 1			' some info
         let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
-            Stmt::Sub {
+            StmtKind::Sub {
                 visibility: Visibility::Default,
                 name: "log".to_string(),
                 parameters: vec![
@@ -756,6 +877,7 @@ Const a = 1			' some info
                 ],
                 body: vec![],
             }
+            .into()
         );
     }
 
@@ -768,12 +890,13 @@ Const a = 1			' some info
         let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
-            Stmt::Sub {
+            StmtKind::Sub {
                 visibility: Visibility::Private,
                 name: "log".to_string(),
                 parameters: vec![],
                 body: vec![],
             }
+            .into()
         );
     }
 
@@ -784,25 +907,25 @@ Const a = 1			' some info
         #[rustfmt::skip]
         assert_eq!(
             stmt,
-            Stmt::Sub {
+            StmtKind::Sub {
                 visibility: Visibility::Default,
                 name: "Trigger003_hit".to_string(),
                 parameters: vec![],
                 body: vec![
-                    Stmt::Assignment {
+                    StmtKind::Assignment {
                         full_ident: FullIdent::new(
                             Expr::member(Expr::ident("RampWireRight"), "x"),
                         ),
-                        value: Box::new(Expr::Literal(Lit::Float(0.1))),
-                    },
-                    Stmt::Assignment {
+                        value: Box::new(ExprKind::Literal(Lit::Float(0.1)).into()),
+                    }.into(),
+                    StmtKind::Assignment {
                         full_ident: FullIdent::new(
                             Expr::member(Expr::ident("Light030"), "state"),
                         ),
                         value: Box::new(Expr::int(0)),
-                    },
+                    }.into(),
                 ],
-            }
+            }.into()
         );
     }
 
@@ -820,17 +943,26 @@ Const a = 1			' some info
         let file = parse_file(input);
         assert_eq!(
             file,
-            vec![Item::Statement(Stmt::IfStmt {
-                condition: Box::new(Expr::Literal(Lit::Bool(true))),
-                body: vec![Stmt::Sub {
-                    visibility: Visibility::Default,
-                    name: "inner".to_string(),
-                    parameters: vec![],
-                    body: vec![],
-                }],
-                elseif_statements: vec![],
-                else_stmt: None,
-            })],
+            vec![
+                ItemKind::Statement(
+                    StmtKind::IfStmt {
+                        condition: Box::new(ExprKind::Literal(Lit::Bool(true)).into()),
+                        body: vec![
+                            StmtKind::Sub {
+                                visibility: Visibility::Default,
+                                name: "inner".to_string(),
+                                parameters: vec![],
+                                body: vec![],
+                            }
+                            .into()
+                        ],
+                        elseif_statements: vec![],
+                        else_stmt: None,
+                    }
+                    .into()
+                )
+                .into()
+            ],
         );
     }
 
@@ -845,24 +977,34 @@ Const a = 1			' some info
         let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
-            Stmt::Sub {
+            StmtKind::Sub {
                 visibility: Visibility::Default,
                 name: "Trigger1_Hit".to_string(),
                 parameters: vec![],
-                body: vec![Stmt::IfStmt {
-                    condition: Box::new(InfixOp {
-                        op: T![=],
-                        lhs: Box::new(Expr::ident("BIP")),
-                        rhs: Box::new(Expr::int(1)),
-                    }),
-                    body: vec![Stmt::Assignment {
-                        full_ident: FullIdent::ident("BIP"),
-                        value: Box::new(Expr::int(0)),
-                    }],
-                    elseif_statements: vec![],
-                    else_stmt: None,
-                },],
+                body: vec![
+                    StmtKind::IfStmt {
+                        condition: Box::new(
+                            InfixOp {
+                                op: T![=],
+                                lhs: Box::new(Expr::ident("BIP")),
+                                rhs: Box::new(Expr::int(1)),
+                            }
+                            .into()
+                        ),
+                        body: vec![
+                            StmtKind::Assignment {
+                                full_ident: FullIdent::ident("BIP"),
+                                value: Box::new(Expr::int(0)),
+                            }
+                            .into()
+                        ],
+                        elseif_statements: vec![],
+                        else_stmt: None,
+                    }
+                    .into(),
+                ],
             }
+            .into()
         );
     }
 
@@ -876,12 +1018,13 @@ Const a = 1			' some info
         let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
-            Stmt::Sub {
+            StmtKind::Sub {
                 visibility: Visibility::Default,
                 name: "test".to_string(),
                 parameters: vec![Argument::ByRef("a".to_string())],
                 body: vec![],
             }
+            .into()
         );
     }
 
@@ -899,21 +1042,32 @@ Const a = 1			' some info
         assert_eq!(
             all,
             vec![
-                Item::Statement(Stmt::Sub {
-                    visibility: Visibility::Default,
-                    name: "test".to_string(),
-                    parameters: vec![Argument::ByRef("a".to_string())],
-                    body: vec![],
-                }),
-                Item::Statement(Stmt::Function {
-                    visibility: Visibility::Default,
-                    name: "test2".to_string(),
-                    parameters: vec![Argument::ByVal("a".to_string())],
-                    body: vec![Stmt::Assignment {
-                        full_ident: FullIdent::ident("test2"),
-                        value: Box::new(Expr::ident("a")),
-                    }],
-                }),
+                ItemKind::Statement(
+                    StmtKind::Sub {
+                        visibility: Visibility::Default,
+                        name: "test".to_string(),
+                        parameters: vec![Argument::ByRef("a".to_string())],
+                        body: vec![],
+                    }
+                    .into()
+                )
+                .into(),
+                ItemKind::Statement(
+                    StmtKind::Function {
+                        visibility: Visibility::Default,
+                        name: "test2".to_string(),
+                        parameters: vec![Argument::ByVal("a".to_string())],
+                        body: vec![
+                            StmtKind::Assignment {
+                                full_ident: FullIdent::ident("test2"),
+                                value: Box::new(Expr::ident("a")),
+                            }
+                            .into()
+                        ],
+                    }
+                    .into()
+                )
+                .into(),
             ]
         );
     }
@@ -964,7 +1118,7 @@ Const a = 1			' some info
             Option Explicit ' Force explicit variable declaration.
             ' This is another comment"};
         let all = parse_file(input);
-        assert_eq!(all, vec![Item::OptionExplicit,]);
+        assert_eq!(all, vec![ItemKind::OptionExplicit.into(),]);
     }
 
     #[test]
@@ -974,11 +1128,15 @@ Const a = 1			' some info
         assert_eq!(
             all,
             vec![
-                Item::OptionExplicit,
-                Item::Statement(Stmt::SubCall {
-                    fn_name: FullIdent::ident("Randomize"),
-                    args: vec![],
-                }),
+                ItemKind::OptionExplicit.into(),
+                ItemKind::Statement(
+                    StmtKind::SubCall {
+                        fn_name: FullIdent::ident("Randomize"),
+                        args: vec![],
+                    }
+                    .into()
+                )
+                .into(),
             ]
         );
     }
@@ -989,10 +1147,16 @@ Const a = 1			' some info
         let all = parse_file(input);
         assert_eq!(
             all,
-            vec![Item::Statement(Stmt::SubCall {
-                fn_name: FullIdent::ident("SayHello"),
-                args: vec![],
-            }),]
+            vec![
+                ItemKind::Statement(
+                    StmtKind::SubCall {
+                        fn_name: FullIdent::ident("SayHello"),
+                        args: vec![],
+                    }
+                    .into()
+                )
+                .into(),
+            ]
         );
     }
 
@@ -1007,18 +1171,30 @@ Const a = 1			' some info
         assert_eq!(
             all,
             vec![
-                Item::Statement(Stmt::SubCall {
-                    fn_name: FullIdent::ident("test"),
-                    args: vec![],
-                }),
-                Item::Statement(Stmt::SubCall {
-                    fn_name: FullIdent::ident("test"),
-                    args: vec![Some(Expr::int(1))],
-                }),
-                Item::Statement(Stmt::SubCall {
-                    fn_name: FullIdent::ident("test"),
-                    args: vec![Some(Expr::int(1)), Some(Expr::int(2))],
-                }),
+                ItemKind::Statement(
+                    StmtKind::SubCall {
+                        fn_name: FullIdent::ident("test"),
+                        args: vec![],
+                    }
+                    .into()
+                )
+                .into(),
+                ItemKind::Statement(
+                    StmtKind::SubCall {
+                        fn_name: FullIdent::ident("test"),
+                        args: vec![Some(Expr::int(1))],
+                    }
+                    .into()
+                )
+                .into(),
+                ItemKind::Statement(
+                    StmtKind::SubCall {
+                        fn_name: FullIdent::ident("test"),
+                        args: vec![Some(Expr::int(1)), Some(Expr::int(2))],
+                    }
+                    .into()
+                )
+                .into(),
             ]
         );
     }
@@ -1034,12 +1210,20 @@ Const a = 1			' some info
         assert_eq!(
             all,
             vec![
-                Item::Statement(OnError {
-                    error_clause: ResumeNext
-                }),
-                Item::Statement(OnError {
-                    error_clause: Goto0
-                }),
+                ItemKind::Statement(
+                    OnError {
+                        error_clause: ResumeNext
+                    }
+                    .into()
+                )
+                .into(),
+                ItemKind::Statement(
+                    OnError {
+                        error_clause: Goto0
+                    }
+                    .into()
+                )
+                .into(),
             ]
         );
     }
@@ -1164,33 +1348,174 @@ Const a = 1			' some info
         }
     }
 
+    /// The source text of a node.
+    fn text<'a, T>(input: &'a str, node: &Spanned<T>) -> &'a str {
+        &input[std::ops::Range::<usize>::from(node.span)]
+    }
+
     #[test]
-    fn test_sub_call_with_parenthesized_argument_before_else_or_end() {
-        let call = Stmt::SubCall {
-            fn_name: FullIdent::ident("Foo"),
-            args: vec![Some(Expr::ident("a"))],
+    fn test_span_of_expressions() {
+        let input = "x = (a + b) * -c.d(1, e) & \"s\"";
+        let items = parse_file(input);
+        let ItemKind::Statement(stmt) = &items[0].node else {
+            panic!("expected a statement")
         };
-        let other = Stmt::SubCall {
-            fn_name: FullIdent::ident("Bar"),
-            args: vec![],
+        let StmtKind::Assignment { full_ident, value } = &stmt.node else {
+            panic!("expected an assignment")
+        };
+        assert_eq!(text(input, &full_ident.0), "x");
+        assert_eq!(text(input, value), "(a + b) * -c.d(1, e) & \"s\"");
+        let ExprKind::InfixOp { lhs, rhs, .. } = &value.node else {
+            panic!("expected an infix operator")
+        };
+        assert_eq!(text(input, rhs), "\"s\"");
+        assert_eq!(text(input, lhs), "(a + b) * -c.d(1, e)");
+        let ExprKind::InfixOp { lhs, rhs, .. } = &lhs.node else {
+            panic!("expected an infix operator")
+        };
+        // there is no node for the parentheses, they are part of what they group
+        assert_eq!(text(input, lhs), "(a + b)");
+        assert_eq!(text(input, rhs), "-c.d(1, e)");
+        let ExprKind::PrefixOp { expr, .. } = &rhs.node else {
+            panic!("expected a prefix operator")
+        };
+        assert_eq!(text(input, expr), "c.d(1, e)");
+        let ExprKind::FnApplication { callee, args } = &expr.node else {
+            panic!("expected a function application")
+        };
+        assert_eq!(text(input, callee), "c.d");
+        assert_eq!(text(input, args[1].as_ref().unwrap()), "e");
+    }
+
+    #[test]
+    fn test_span_of_statements_excludes_delimiters_and_comments() {
+        let input = indoc! {r#"
+            ' leading comment
+            Dim a : a = 1 ' trailing comment
+
+            Public Sub Foo(b)
+                If b Then
+                    .prop = 2
+                End If
+            End Sub   ' done
+        "#};
+        let items = parse_file(input);
+        let texts: Vec<_> = items.iter().map(|item| text(input, item)).collect();
+        assert_eq!(
+            texts,
+            [
+                "Dim a",
+                "a = 1",
+                "Public Sub Foo(b)\n    If b Then\n        .prop = 2\n    End If\nEnd Sub"
+            ]
+        );
+        let ItemKind::Statement(sub) = &items[2].node else {
+            panic!("expected a statement")
+        };
+        // the statement of an item has the same span, visibility included
+        assert_eq!(sub.span, items[2].span);
+        let StmtKind::Sub { body, .. } = &sub.node else {
+            panic!("expected a sub")
         };
         assert_eq!(
+            text(input, &body[0]),
+            "If b Then\n        .prop = 2\n    End If"
+        );
+        let StmtKind::IfStmt { body, .. } = &body[0].node else {
+            panic!("expected an if")
+        };
+        assert_eq!(text(input, &body[0]), ".prop = 2");
+        let StmtKind::Assignment { full_ident, .. } = &body[0].node else {
+            panic!("expected an assignment")
+        };
+        let ExprKind::MemberExpression { base, .. } = &full_ident.0.node else {
+            panic!("expected a member expression")
+        };
+        // the object of the with block is implied
+        assert_eq!(base.node, WithScoped);
+        assert_eq!(text(input, base), "");
+    }
+
+    #[test]
+    fn test_span_of_expression_lifted_out_of_sub_call_parentheses() {
+        // `(a \ 10)` looks like the arguments of the call but is the start of an expression
+        let input = "Foo (a \\ 10) + 1";
+        let items = parse_file(input);
+        let ItemKind::Statement(stmt) = &items[0].node else {
+            panic!("expected a statement")
+        };
+        let StmtKind::SubCall { fn_name, args } = &stmt.node else {
+            panic!("expected a sub call")
+        };
+        assert_eq!(text(input, &fn_name.0), "Foo");
+        let arg = args[0].as_ref().unwrap();
+        assert_eq!(text(input, arg), "(a \\ 10) + 1");
+        let ExprKind::InfixOp { lhs, .. } = &arg.node else {
+            panic!("expected an infix operator")
+        };
+        assert_eq!(text(input, lhs), "(a \\ 10)");
+    }
+
+    #[test]
+    fn test_spans_are_ignored_when_comparing() {
+        let compact = parse_file("x=a+1");
+        let spaced = parse_file("x  =  a   +   1");
+        assert_eq!(compact, spaced);
+        assert_ne!(compact[0].span, spaced[0].span);
+        // a tree that is built by hand is equal to the parsed one
+        let built = Item::from(ItemKind::Statement(Stmt::assignment(
+            FullIdent::ident("x"),
+            ExprKind::InfixOp {
+                op: T![+],
+                lhs: Box::new(Expr::ident("a")),
+                rhs: Box::new(Expr::int(1)),
+            }
+            .into(),
+        )));
+        assert_eq!(compact, vec![built]);
+    }
+
+    #[test]
+    fn test_sub_call_with_parenthesized_argument_before_else_or_end() {
+        let call: Stmt = StmtKind::SubCall {
+            fn_name: FullIdent::ident("Foo"),
+            args: vec![Some(Expr::ident("a"))],
+        }
+        .into();
+        let other: Stmt = StmtKind::SubCall {
+            fn_name: FullIdent::ident("Bar"),
+            args: vec![],
+        }
+        .into();
+        assert_eq!(
             parse_file("If x Then Foo (a) Else Bar"),
-            vec![Item::Statement(Stmt::IfStmt {
-                condition: Box::new(Expr::ident("x")),
-                body: vec![call.clone()],
-                elseif_statements: vec![],
-                else_stmt: Some(vec![other]),
-            })]
+            vec![
+                ItemKind::Statement(
+                    StmtKind::IfStmt {
+                        condition: Box::new(Expr::ident("x")),
+                        body: vec![call.clone()],
+                        elseif_statements: vec![],
+                        else_stmt: Some(vec![other]),
+                    }
+                    .into()
+                )
+                .into()
+            ]
         );
         assert_eq!(
             parse_file("If x Then Foo (a) End If"),
-            vec![Item::Statement(Stmt::IfStmt {
-                condition: Box::new(Expr::ident("x")),
-                body: vec![call],
-                elseif_statements: vec![],
-                else_stmt: None,
-            })]
+            vec![
+                ItemKind::Statement(
+                    StmtKind::IfStmt {
+                        condition: Box::new(Expr::ident("x")),
+                        body: vec![call],
+                        elseif_statements: vec![],
+                        else_stmt: None,
+                    }
+                    .into()
+                )
+                .into()
+            ]
         );
     }
 
@@ -1200,15 +1525,19 @@ Const a = 1			' some info
         let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
-            Stmt::IfStmt {
+            StmtKind::IfStmt {
                 condition: Box::new(Expr::ident("Err")),
-                body: vec![Stmt::SubCall {
-                    fn_name: FullIdent::ident("MsgBox"),
-                    args: vec![Some(Expr::str("Oh noes"))],
-                }],
+                body: vec![
+                    StmtKind::SubCall {
+                        fn_name: FullIdent::ident("MsgBox"),
+                        args: vec![Some(Expr::str("Oh noes"))],
+                    }
+                    .into()
+                ],
                 elseif_statements: vec![],
                 else_stmt: None,
             }
+            .into()
         );
     }
 
@@ -1218,21 +1547,24 @@ Const a = 1			' some info
         let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
-            Stmt::IfStmt {
+            StmtKind::IfStmt {
                 condition: Box::new(Expr::ident("Err")),
                 body: vec![
-                    Stmt::SubCall {
+                    StmtKind::SubCall {
                         fn_name: FullIdent::ident("MsgBox"),
                         args: vec![Some(Expr::str("Oh noes"))],
-                    },
-                    Stmt::SubCall {
+                    }
+                    .into(),
+                    StmtKind::SubCall {
                         fn_name: FullIdent::ident("MsgBox"),
                         args: vec![Some(Expr::str("Crash"))],
                     }
+                    .into()
                 ],
                 elseif_statements: vec![],
                 else_stmt: None,
             }
+            .into()
         );
     }
 
@@ -1242,34 +1574,43 @@ Const a = 1			' some info
         let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
-            Stmt::IfStmt {
-                condition: Box::new(InfixOp {
-                    op: T![>],
-                    lhs: Box::new(Expr::ident("VRRoom")),
-                    rhs: Box::new(Expr::int(0)),
-                }),
-                body: vec![Stmt::Assignment {
-                    full_ident: FullIdent::new(Expr::member(Expr::ident("bbs006"), "state"),),
-                    value: Box::new(Expr::ident("x2")),
-                }],
+            StmtKind::IfStmt {
+                condition: Box::new(
+                    InfixOp {
+                        op: T![>],
+                        lhs: Box::new(Expr::ident("VRRoom")),
+                        rhs: Box::new(Expr::int(0)),
+                    }
+                    .into()
+                ),
+                body: vec![
+                    StmtKind::Assignment {
+                        full_ident: FullIdent::new(Expr::member(Expr::ident("bbs006"), "state"),),
+                        value: Box::new(Expr::ident("x2")),
+                    }
+                    .into()
+                ],
                 elseif_statements: vec![],
                 else_stmt: Some(vec![
-                    Stmt::SubCall {
+                    StmtKind::SubCall {
                         fn_name: FullIdent::new(Expr::member(
                             Expr::ident("controller"),
                             "B2SSetData"
                         ),),
                         args: vec![Some(Expr::int(50)), Some(Expr::ident("x2")),],
-                    },
-                    Stmt::SubCall {
+                    }
+                    .into(),
+                    StmtKind::SubCall {
                         fn_name: FullIdent::new(Expr::member(
                             Expr::ident("controller"),
                             "B2SSetData"
                         ),),
                         args: vec![Some(Expr::int(53)), Some(Expr::ident("x2")),],
-                    },
+                    }
+                    .into(),
                 ]),
             }
+            .into()
         );
     }
 
@@ -1279,22 +1620,29 @@ Const a = 1			' some info
         let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
-            Stmt::IfStmt {
-                condition: Box::new(InfixOp {
-                    op: T![=],
-                    lhs: Box::new(Expr::ident("a")),
-                    rhs: Box::new(Expr::int(1)),
-                }),
-                body: vec![Stmt::SubCall {
-                    fn_name: FullIdent::new(Expr::fn_application(
-                        Expr::ident("DoSomething"),
-                        vec![]
-                    )),
-                    args: vec![],
-                }],
+            StmtKind::IfStmt {
+                condition: Box::new(
+                    InfixOp {
+                        op: T![=],
+                        lhs: Box::new(Expr::ident("a")),
+                        rhs: Box::new(Expr::int(1)),
+                    }
+                    .into()
+                ),
+                body: vec![
+                    StmtKind::SubCall {
+                        fn_name: FullIdent::new(Expr::fn_application(
+                            Expr::ident("DoSomething"),
+                            vec![]
+                        )),
+                        args: vec![],
+                    }
+                    .into()
+                ],
                 elseif_statements: vec![],
                 else_stmt: None,
             }
+            .into()
         );
     }
 
@@ -1305,26 +1653,39 @@ Const a = 1			' some info
         let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
-            Stmt::IfStmt {
-                condition: Box::new(InfixOp {
-                    op: T![or],
-                    lhs: Box::new(InfixOp {
-                        op: T![<],
-                        lhs: Box::new(Expr::ident("x")),
-                        rhs: Box::new(Expr::int(0)),
-                    }),
-                    rhs: Box::new(Expr::ident("Err")),
-                }),
-                body: vec![Stmt::SubCall {
-                    fn_name: FullIdent::ident("DoSomething"),
-                    args: vec![Some(Expr::ident("obj"))],
-                },],
+            StmtKind::IfStmt {
+                condition: Box::new(
+                    InfixOp {
+                        op: T![or],
+                        lhs: Box::new(
+                            InfixOp {
+                                op: T![<],
+                                lhs: Box::new(Expr::ident("x")),
+                                rhs: Box::new(Expr::int(0)),
+                            }
+                            .into()
+                        ),
+                        rhs: Box::new(Expr::ident("Err")),
+                    }
+                    .into()
+                ),
+                body: vec![
+                    StmtKind::SubCall {
+                        fn_name: FullIdent::ident("DoSomething"),
+                        args: vec![Some(Expr::ident("obj"))],
+                    }
+                    .into(),
+                ],
                 elseif_statements: vec![],
-                else_stmt: Some(vec![Stmt::SubCall {
-                    fn_name: FullIdent::ident("DoSomethingElse"),
-                    args: vec![Some(Expr::ident("obj"))],
-                },]),
+                else_stmt: Some(vec![
+                    StmtKind::SubCall {
+                        fn_name: FullIdent::ident("DoSomethingElse"),
+                        args: vec![Some(Expr::ident("obj"))],
+                    }
+                    .into(),
+                ]),
             }
+            .into()
         );
     }
 
@@ -1339,38 +1700,38 @@ Const a = 1			' some info
         assert_eq!(
             file,
             vec![
-                Item::Statement(Stmt::IfStmt {
+                ItemKind::Statement(StmtKind::IfStmt {
                     condition: Box::new(InfixOp {
                         op: T![<>],
                         lhs: Box::new(Expr::ident("x")),
-                        rhs: Box::new(Expr::Literal(Lit::Str("".to_string()))),
-                    }),
-                    body: vec![Stmt::Assignment {
+                        rhs: Box::new(ExprKind::Literal(Lit::Str("".to_string())).into()),
+                    }.into()),
+                    body: vec![StmtKind::Assignment {
                         full_ident: FullIdent::ident("LutValue"),
                         value: Box::new(Expr::fn_application(
                             Expr::ident("CDbl"),
                             vec![Expr::ident("x")])
                         ),
-                    }],
+                    }.into()],
                     elseif_statements: vec![],
-                    else_stmt: Some(vec![Stmt::Assignment {
+                    else_stmt: Some(vec![StmtKind::Assignment {
                         full_ident: FullIdent::ident("LutValue"),
                         value: Box::new(Expr::int(1)),
-                    }]),
-                }),
-                Item::Statement(Stmt::IfStmt {
+                    }.into()]),
+                }.into()).into(),
+                ItemKind::Statement(StmtKind::IfStmt {
                     condition: Box::new(InfixOp {
                         op: T![<],
                         lhs: Box::new(Expr::ident("LutValue")),
                         rhs: Box::new(Expr::int(1)),
-                    }),
-                    body: vec![Stmt::Assignment {
+                    }.into()),
+                    body: vec![StmtKind::Assignment {
                         full_ident: FullIdent::ident("LutValue"),
                         value: Box::new(Expr::int(1)),
-                    }],
+                    }.into()],
                     elseif_statements: vec![],
                     else_stmt: None,
-                }),
+                }.into()).into(),
             ]
         );
     }
@@ -1381,22 +1742,32 @@ Const a = 1			' some info
         let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
-            Stmt::IfStmt {
-                condition: Box::new(InfixOp {
-                    op: T![>],
-                    lhs: Box::new(Expr::ident("x")),
-                    rhs: Box::new(Expr::int(2)),
-                }),
-                body: vec![Stmt::Assignment {
-                    full_ident: FullIdent::ident("y"),
-                    value: Box::new(Expr::int(3)),
-                }],
+            StmtKind::IfStmt {
+                condition: Box::new(
+                    InfixOp {
+                        op: T![>],
+                        lhs: Box::new(Expr::ident("x")),
+                        rhs: Box::new(Expr::int(2)),
+                    }
+                    .into()
+                ),
+                body: vec![
+                    StmtKind::Assignment {
+                        full_ident: FullIdent::ident("y"),
+                        value: Box::new(Expr::int(3)),
+                    }
+                    .into()
+                ],
                 elseif_statements: vec![],
-                else_stmt: Some(vec![Stmt::Assignment {
-                    full_ident: FullIdent::ident("y"),
-                    value: Box::new(Expr::int(4)),
-                }]),
+                else_stmt: Some(vec![
+                    StmtKind::Assignment {
+                        full_ident: FullIdent::ident("y"),
+                        value: Box::new(Expr::int(4)),
+                    }
+                    .into()
+                ]),
             }
+            .into()
         );
     }
 
@@ -1406,43 +1777,58 @@ Const a = 1			' some info
         let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
-            Stmt::IfStmt {
-                condition: Box::new(InfixOp {
-                    op: T![=],
-                    lhs: Box::new(Expr::ident("key")),
-                    rhs: Box::new(Expr::int(1)),
-                }),
+            StmtKind::IfStmt {
+                condition: Box::new(
+                    InfixOp {
+                        op: T![=],
+                        lhs: Box::new(Expr::ident("key")),
+                        rhs: Box::new(Expr::int(1)),
+                    }
+                    .into()
+                ),
                 body: vec![
-                    Stmt::SubCall {
+                    StmtKind::SubCall {
                         fn_name: FullIdent::new(Expr::member(Expr::ident("foo"), "fire"),),
                         args: vec![],
-                    },
-                    Stmt::IfStmt {
-                        condition: Box::new(InfixOp {
-                            op: T![=],
-                            lhs: Box::new(Expr::ident("bar")),
-                            rhs: Box::new(Expr::int(1)),
-                        }),
-                        body: vec![Stmt::SubCall {
-                            fn_name: FullIdent::new(Expr::fn_application(
-                                Expr::ident("DoSomething"),
-                                vec![],
-                            )),
-                            args: vec![],
-                        }],
-                        elseif_statements: vec![],
-                        else_stmt: Some(vec![Stmt::SubCall {
-                            fn_name: FullIdent::new(Expr::fn_application(
-                                Expr::ident("DoSomethingElse"),
-                                vec![],
-                            )),
-                            args: vec![],
-                        }]),
                     }
+                    .into(),
+                    StmtKind::IfStmt {
+                        condition: Box::new(
+                            InfixOp {
+                                op: T![=],
+                                lhs: Box::new(Expr::ident("bar")),
+                                rhs: Box::new(Expr::int(1)),
+                            }
+                            .into()
+                        ),
+                        body: vec![
+                            StmtKind::SubCall {
+                                fn_name: FullIdent::new(Expr::fn_application(
+                                    Expr::ident("DoSomething"),
+                                    vec![],
+                                )),
+                                args: vec![],
+                            }
+                            .into()
+                        ],
+                        elseif_statements: vec![],
+                        else_stmt: Some(vec![
+                            StmtKind::SubCall {
+                                fn_name: FullIdent::new(Expr::fn_application(
+                                    Expr::ident("DoSomethingElse"),
+                                    vec![],
+                                )),
+                                args: vec![],
+                            }
+                            .into()
+                        ]),
+                    }
+                    .into()
                 ],
                 elseif_statements: vec![],
                 else_stmt: None,
             }
+            .into()
         );
     }
 
@@ -1456,28 +1842,46 @@ Const a = 1			' some info
         let stmt = parse_file(input);
         assert_eq!(
             stmt,
-            vec![Item::Statement(Stmt::IfStmt {
-                condition: Box::new(InfixOp {
-                    op: T![>],
-                    lhs: Box::new(Expr::ident("x")),
-                    rhs: Box::new(Expr::int(2)),
-                }),
-                body: vec![Stmt::IfStmt {
-                    condition: Box::new(InfixOp {
-                        op: T![or],
-                        lhs: Box::new(Expr::ident("This")),
-                        rhs: Box::new(Expr::ident("That")),
-                    }),
-                    body: vec![Stmt::SubCall {
-                        fn_name: FullIdent::ident("DoSomething"),
-                        args: vec![],
-                    }],
-                    elseif_statements: vec![],
-                    else_stmt: None,
-                }],
-                elseif_statements: vec![],
-                else_stmt: None,
-            }),]
+            vec![
+                ItemKind::Statement(
+                    StmtKind::IfStmt {
+                        condition: Box::new(
+                            InfixOp {
+                                op: T![>],
+                                lhs: Box::new(Expr::ident("x")),
+                                rhs: Box::new(Expr::int(2)),
+                            }
+                            .into()
+                        ),
+                        body: vec![
+                            StmtKind::IfStmt {
+                                condition: Box::new(
+                                    InfixOp {
+                                        op: T![or],
+                                        lhs: Box::new(Expr::ident("This")),
+                                        rhs: Box::new(Expr::ident("That")),
+                                    }
+                                    .into()
+                                ),
+                                body: vec![
+                                    StmtKind::SubCall {
+                                        fn_name: FullIdent::ident("DoSomething"),
+                                        args: vec![],
+                                    }
+                                    .into()
+                                ],
+                                elseif_statements: vec![],
+                                else_stmt: None,
+                            }
+                            .into()
+                        ],
+                        elseif_statements: vec![],
+                        else_stmt: None,
+                    }
+                    .into()
+                )
+                .into(),
+            ]
         );
     }
 
@@ -1494,31 +1898,47 @@ Const a = 1			' some info
         let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
-            Stmt::IfStmt {
-                condition: Box::new(InfixOp {
-                    op: T![=],
-                    lhs: Box::new(Expr::ident("a")),
-                    rhs: Box::new(Expr::int(3)),
-                }),
-                body: vec![Stmt::Assignment {
-                    full_ident: FullIdent::ident("b"),
-                    value: Box::new(Expr::int(0)),
-                }],
-                elseif_statements: vec![],
-                else_stmt: Some(vec![Stmt::IfStmt {
-                    condition: Box::new(InfixOp {
+            StmtKind::IfStmt {
+                condition: Box::new(
+                    InfixOp {
                         op: T![=],
                         lhs: Box::new(Expr::ident("a")),
-                        rhs: Box::new(Expr::int(2)),
-                    }),
-                    body: vec![Stmt::Assignment {
+                        rhs: Box::new(Expr::int(3)),
+                    }
+                    .into()
+                ),
+                body: vec![
+                    StmtKind::Assignment {
                         full_ident: FullIdent::ident("b"),
-                        value: Box::new(Expr::int(2)),
-                    }],
-                    elseif_statements: vec![],
-                    else_stmt: None,
-                }]),
+                        value: Box::new(Expr::int(0)),
+                    }
+                    .into()
+                ],
+                elseif_statements: vec![],
+                else_stmt: Some(vec![
+                    StmtKind::IfStmt {
+                        condition: Box::new(
+                            InfixOp {
+                                op: T![=],
+                                lhs: Box::new(Expr::ident("a")),
+                                rhs: Box::new(Expr::int(2)),
+                            }
+                            .into()
+                        ),
+                        body: vec![
+                            StmtKind::Assignment {
+                                full_ident: FullIdent::ident("b"),
+                                value: Box::new(Expr::int(2)),
+                            }
+                            .into()
+                        ],
+                        elseif_statements: vec![],
+                        else_stmt: None,
+                    }
+                    .into()
+                ]),
             }
+            .into()
         );
     }
 
@@ -1535,9 +1955,10 @@ Const a = 1			' some info
         let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
-            Stmt::Dim {
+            StmtKind::Dim {
                 vars: vec![("x".to_string(), vec![Expr::int(1), Expr::int(2)])],
             }
+            .into()
         );
     }
 
@@ -1547,9 +1968,10 @@ Const a = 1			' some info
         let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
-            Stmt::Dim {
+            StmtKind::Dim {
                 vars: vec![("PlayerMode".to_string(), vec![Expr::int(2)])],
             }
+            .into()
         );
     }
 
@@ -1559,20 +1981,24 @@ Const a = 1			' some info
         let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
-            Stmt::Dim {
+            StmtKind::Dim {
                 vars: vec![
                     ("x".to_string(), vec![]),
                     ("y".to_string(), vec![]),
                     (
                         "z".to_string(),
-                        vec![InfixOp {
-                            op: T![+],
-                            lhs: Box::new(Expr::int(1)),
-                            rhs: Box::new(Expr::int(3)),
-                        }]
+                        vec![
+                            InfixOp {
+                                op: T![+],
+                                lhs: Box::new(Expr::int(1)),
+                                rhs: Box::new(Expr::int(3)),
+                            }
+                            .into()
+                        ]
                     ),
                 ],
             }
+            .into()
         );
     }
 
@@ -1582,12 +2008,13 @@ Const a = 1			' some info
         let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
-            Stmt::Assignment {
+            StmtKind::Assignment {
                 full_ident: FullIdent::ident("x"),
                 value: Box::new(Expr::int_str(
                     "1111111111111111111111111111111111111111111111111111111111111"
                 ))
             }
+            .into()
         );
     }
 
@@ -1611,10 +2038,11 @@ Const a = 1			' some info
         let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
-            Stmt::Const(vec![
+            StmtKind::Const(vec![
                 ("x".to_string(), Lit::int(42)),
                 ("txt".to_string(), Lit::str("Hello".to_string())),
             ])
+            .into()
         );
     }
 
@@ -1628,14 +2056,16 @@ Const a = 1			' some info
         assert_eq!(
             all,
             vec![
-                Item::Const {
+                ItemKind::Const {
                     visibility: Visibility::Public,
                     values: vec![("x".to_string(), Lit::int(42))],
-                },
-                Item::Const {
+                }
+                .into(),
+                ItemKind::Const {
                     visibility: Visibility::Public,
                     values: vec![("y".to_string(), Lit::int(13))],
                 }
+                .into()
             ]
         );
     }
@@ -1650,14 +2080,16 @@ Const a = 1			' some info
         assert_eq!(
             all,
             vec![
-                Item::Const {
+                ItemKind::Const {
                     visibility: Visibility::Public,
                     values: vec![("Test".to_string(), Lit::Bool(false))],
-                },
-                Item::Const {
+                }
+                .into(),
+                ItemKind::Const {
                     visibility: Visibility::Public,
                     values: vec![("Test2".to_string(), Lit::Bool(true))],
                 }
+                .into()
             ]
         );
     }
@@ -1670,10 +2102,13 @@ Const a = 1			' some info
         let all = parse_file(input);
         assert_eq!(
             all,
-            vec![Item::Const {
-                visibility: Visibility::Private,
-                values: vec![("Test".to_string(), Lit::int(-1))],
-            }]
+            vec![
+                ItemKind::Const {
+                    visibility: Visibility::Private,
+                    values: vec![("Test".to_string(), Lit::int(-1))],
+                }
+                .into()
+            ]
         );
     }
 
@@ -1687,18 +2122,20 @@ Const a = 1			' some info
         assert_eq!(
             all,
             vec![
-                Item::Variable {
+                ItemKind::Variable {
                     visibility: Visibility::Public,
                     vars: vec![("x".to_string(), None), ("y".to_string(), Some(vec![1, 2])),],
-                },
-                Item::Variable {
+                }
+                .into(),
+                ItemKind::Variable {
                     visibility: Visibility::Private,
                     vars: vec![
                         ("z".to_string(), None),
                         ("a".to_string(), Some(vec![1])),
                         ("b".to_string(), Some(vec![])),
                     ],
-                },
+                }
+                .into(),
             ]
         );
     }
@@ -1726,11 +2163,11 @@ Const a = 1			' some info
         assert_eq!(
             file,
             vec![
-                Item::Statement(Stmt::Set {
+                ItemKind::Statement(StmtKind::Set {
                     var: FullIdent::ident("foo"),
                     rhs: SetRhs::ident("bar"),
-                }),
-                Item::Statement(Stmt::Set {
+                }.into()).into(),
+                ItemKind::Statement(StmtKind::Set {
                     var: FullIdent::new(
                         Expr::fn_application(
                             Expr::ident("Obj"),
@@ -1738,7 +2175,7 @@ Const a = 1			' some info
                         )
                     ),
                     rhs: SetRhs::ident("NullFader"),
-                }),
+                }.into()).into(),
             ]
         );
     }
@@ -1749,10 +2186,16 @@ Const a = 1			' some info
         let items = parse_file(input);
         assert_eq!(
             items,
-            vec![Item::Statement(Stmt::Set {
-                var: FullIdent::ident("foo"),
-                rhs: SetRhs::Expr(Box::new(Expr::new("Bar"))),
-            })]
+            vec![
+                ItemKind::Statement(
+                    StmtKind::Set {
+                        var: FullIdent::ident("foo"),
+                        rhs: SetRhs::Expr(Box::new(Expr::new("Bar"))),
+                    }
+                    .into()
+                )
+                .into()
+            ]
         );
     }
 
@@ -1763,13 +2206,23 @@ Const a = 1			' some info
         let items = parse_file(input);
         assert_eq!(
             items,
-            vec![Item::Statement(Stmt::Set {
-                var: FullIdent::ident("DT1"),
-                rhs: SetRhs::Expr(Box::new(Expr::fn_application(
-                    Expr::new("DropTarget"),
-                    vec![Expr::int(1), Expr::int(0), Expr::Literal(Lit::Bool(false)),]
-                ))),
-            })]
+            vec![
+                ItemKind::Statement(
+                    StmtKind::Set {
+                        var: FullIdent::ident("DT1"),
+                        rhs: SetRhs::Expr(Box::new(Expr::fn_application(
+                            Expr::new("DropTarget"),
+                            vec![
+                                Expr::int(1),
+                                Expr::int(0),
+                                ExprKind::Literal(Lit::Bool(false)).into(),
+                            ]
+                        ))),
+                    }
+                    .into()
+                )
+                .into()
+            ]
         );
     }
 
@@ -1779,10 +2232,16 @@ Const a = 1			' some info
         let items = parse_file(input);
         assert_eq!(
             items,
-            vec![Item::Statement(Stmt::Set {
-                var: FullIdent::ident("foo"),
-                rhs: SetRhs::Nothing,
-            })]
+            vec![
+                ItemKind::Statement(
+                    StmtKind::Set {
+                        var: FullIdent::ident("foo"),
+                        rhs: SetRhs::Nothing,
+                    }
+                    .into()
+                )
+                .into()
+            ]
         );
     }
 
@@ -1794,8 +2253,8 @@ Const a = 1			' some info
         assert_eq!(
             items,
             vec![
-                Item::Statement(
-                    Stmt::Set {
+                ItemKind::Statement(
+                    StmtKind::Set {
                         var: FullIdent::new(
                             Expr::fn_application(
                                 Expr::member(Expr::ident("lampz"), "obj"),
@@ -1803,8 +2262,8 @@ Const a = 1			' some info
                             )
                         ),
                         rhs: SetRhs::expr(Expr::int(1)),
-                    }
-                )
+                    }.into()
+                ).into()
             ]
         );
     }
@@ -1815,27 +2274,45 @@ Const a = 1			' some info
         let items = parse_file(input);
         assert_eq!(
             items,
-            vec![Item::Statement(Stmt::ReDim {
-                preserve: true,
-                var_bounds: vec![(
-                    "tmp".to_string(),
-                    vec![InfixOp {
-                        op: T![+],
-                        lhs: Box::new(InfixOp {
-                            op: T![+],
-                            lhs: Box::new(Expr::FnApplication {
-                                callee: Box::new(Expr::ident("uBound")),
-                                args: vec![Some(Expr::ident("aArray"))],
-                            }),
-                            rhs: Box::new(Expr::FnApplication {
-                                callee: Box::new(Expr::ident("uBound")),
-                                args: vec![Some(Expr::ident("aInput"))],
-                            }),
-                        }),
-                        rhs: Box::new(Expr::int(1)),
-                    }]
-                )]
-            })]
+            vec![
+                ItemKind::Statement(
+                    StmtKind::ReDim {
+                        preserve: true,
+                        var_bounds: vec![(
+                            "tmp".to_string(),
+                            vec![
+                                InfixOp {
+                                    op: T![+],
+                                    lhs: Box::new(
+                                        InfixOp {
+                                            op: T![+],
+                                            lhs: Box::new(
+                                                ExprKind::FnApplication {
+                                                    callee: Box::new(Expr::ident("uBound")),
+                                                    args: vec![Some(Expr::ident("aArray"))],
+                                                }
+                                                .into()
+                                            ),
+                                            rhs: Box::new(
+                                                ExprKind::FnApplication {
+                                                    callee: Box::new(Expr::ident("uBound")),
+                                                    args: vec![Some(Expr::ident("aInput"))],
+                                                }
+                                                .into()
+                                            ),
+                                        }
+                                        .into()
+                                    ),
+                                    rhs: Box::new(Expr::int(1)),
+                                }
+                                .into()
+                            ]
+                        )]
+                    }
+                    .into()
+                )
+                .into()
+            ]
         );
     }
 
@@ -1845,13 +2322,14 @@ Const a = 1			' some info
         let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
-            Stmt::ReDim {
+            StmtKind::ReDim {
                 preserve: false,
                 var_bounds: vec![
                     ("a".to_string(), vec![Expr::ident("length")]),
                     ("b".to_string(), vec![Expr::int(2), Expr::int(3)]),
                 ],
             }
+            .into()
         );
     }
 
@@ -1871,45 +2349,62 @@ Const a = 1			' some info
         assert_eq!(
             items,
             vec![
-                Item::Statement(Stmt::dim("test")),
-                Item::Statement(Stmt::IfStmt {
-                    condition: Box::new(InfixOp {
-                        op: T![=],
-                        lhs: Box::new(Expr::ident("RenderingMode")),
-                        rhs: Box::new(Expr::int(2)),
-                    }),
-                    body: vec![
-                        Stmt::Assignment {
-                            full_ident: FullIdent::ident("test"),
-                            value: Box::new(Expr::int(1)),
-                        },
-                        Stmt::SubCall {
-                            fn_name: FullIdent::ident("startcontroller"),
-                            args: vec![],
-                        }
-                    ],
-                    elseif_statements: vec![(
-                        Box::new(InfixOp {
-                            op: T![=],
-                            lhs: Box::new(Expr::ident("RenderingMode")),
-                            rhs: Box::new(Expr::int(3)),
-                        }),
-                        vec![
-                            Stmt::Assignment {
+                ItemKind::Statement(Stmt::dim("test")).into(),
+                ItemKind::Statement(
+                    StmtKind::IfStmt {
+                        condition: Box::new(
+                            InfixOp {
+                                op: T![=],
+                                lhs: Box::new(Expr::ident("RenderingMode")),
+                                rhs: Box::new(Expr::int(2)),
+                            }
+                            .into()
+                        ),
+                        body: vec![
+                            StmtKind::Assignment {
                                 full_ident: FullIdent::ident("test"),
-                                value: Box::new(Expr::int(2)),
-                            },
-                            Stmt::SubCall {
+                                value: Box::new(Expr::int(1)),
+                            }
+                            .into(),
+                            StmtKind::SubCall {
                                 fn_name: FullIdent::ident("startcontroller"),
                                 args: vec![],
                             }
-                        ]
-                    )],
-                    else_stmt: Some(vec![Stmt::Assignment {
-                        full_ident: FullIdent::ident("test"),
-                        value: Box::new(Expr::int(0)),
-                    }]),
-                }),
+                            .into()
+                        ],
+                        elseif_statements: vec![(
+                            Box::new(
+                                InfixOp {
+                                    op: T![=],
+                                    lhs: Box::new(Expr::ident("RenderingMode")),
+                                    rhs: Box::new(Expr::int(3)),
+                                }
+                                .into()
+                            ),
+                            vec![
+                                StmtKind::Assignment {
+                                    full_ident: FullIdent::ident("test"),
+                                    value: Box::new(Expr::int(2)),
+                                }
+                                .into(),
+                                StmtKind::SubCall {
+                                    fn_name: FullIdent::ident("startcontroller"),
+                                    args: vec![],
+                                }
+                                .into()
+                            ]
+                        )],
+                        else_stmt: Some(vec![
+                            StmtKind::Assignment {
+                                full_ident: FullIdent::ident("test"),
+                                value: Box::new(Expr::int(0)),
+                            }
+                            .into()
+                        ]),
+                    }
+                    .into()
+                )
+                .into(),
             ]
         );
     }
@@ -1920,13 +2415,22 @@ Const a = 1			' some info
         let items = parse_file(input);
         assert_eq!(
             items,
-            vec![Item::Statement(Stmt::Assignment {
-                full_ident: FullIdent::ident("x"),
-                value: Box::new(Expr::PrefixOp {
-                    op: T![-],
-                    expr: Box::new(Expr::int(1)),
-                }),
-            })]
+            vec![
+                ItemKind::Statement(
+                    StmtKind::Assignment {
+                        full_ident: FullIdent::ident("x"),
+                        value: Box::new(
+                            ExprKind::PrefixOp {
+                                op: T![-],
+                                expr: Box::new(Expr::int(1)),
+                            }
+                            .into()
+                        ),
+                    }
+                    .into()
+                )
+                .into()
+            ]
         );
     }
 
@@ -1936,16 +2440,23 @@ Const a = 1			' some info
         let items = parse_file(input);
         assert_eq!(
             items,
-            vec![Item::Statement(Stmt::Assignment {
-                full_ident: FullIdent::new(Expr::member(
-                    Expr::FnApplication {
-                        callee: Box::new(Expr::ident("objectArray")),
-                        args: vec![Some(Expr::ident("i"))],
-                    },
-                    "image"
-                )),
-                value: Box::new(Expr::str("test")),
-            })]
+            vec![
+                ItemKind::Statement(
+                    StmtKind::Assignment {
+                        full_ident: FullIdent::new(Expr::member(
+                            ExprKind::FnApplication {
+                                callee: Box::new(Expr::ident("objectArray")),
+                                args: vec![Some(Expr::ident("i"))],
+                            }
+                            .into(),
+                            "image"
+                        )),
+                        value: Box::new(Expr::str("test")),
+                    }
+                    .into()
+                )
+                .into()
+            ]
         );
     }
 
@@ -1956,17 +2467,17 @@ Const a = 1			' some info
         #[rustfmt::skip]
         assert_eq!(
             items,
-            vec![Item::Statement(Stmt::assignment (
+            vec![ItemKind::Statement(Stmt::assignment (
                 FullIdent::new(
                     Expr::member(Expr::ident("foo"), "a")
                 ),
                 InfixOp {
                     op: T![-],
                     lhs: Box::new(Expr::member(Expr::ident("foo"), "b")),
-                    rhs: Box::new(Expr::Literal(Lit::Float(120.5))),
-                }
+                    rhs: Box::new(ExprKind::Literal(Lit::Float(120.5)).into()),
+                }.into()
             )
-            )]
+            ).into()]
         );
     }
 
@@ -1985,29 +2496,44 @@ Const a = 1			' some info
         let items = parse_file(input);
         assert_eq!(
             items,
-            vec![Item::Statement(Stmt::SelectCase {
-                test_expr: Box::new(Expr::ident("x")),
-                cases: vec![
-                    Case {
-                        tests: vec![Expr::int(1), Expr::int(2),],
-                        body: vec![Stmt::Assignment {
-                            full_ident: FullIdent::ident("y"),
-                            value: Box::new(Expr::int(2)),
-                        }]
-                    },
-                    Case {
-                        tests: vec![Expr::int(3),],
-                        body: vec![Stmt::Assignment {
-                            full_ident: FullIdent::ident("y"),
-                            value: Box::new(Expr::int(3)),
-                        }]
-                    },
-                ],
-                else_stmt: Some(vec![Stmt::Assignment {
-                    full_ident: FullIdent::ident("y"),
-                    value: Box::new(Expr::int(4)),
-                }]),
-            })]
+            vec![
+                ItemKind::Statement(
+                    StmtKind::SelectCase {
+                        test_expr: Box::new(Expr::ident("x")),
+                        cases: vec![
+                            Case {
+                                tests: vec![Expr::int(1), Expr::int(2),],
+                                body: vec![
+                                    StmtKind::Assignment {
+                                        full_ident: FullIdent::ident("y"),
+                                        value: Box::new(Expr::int(2)),
+                                    }
+                                    .into()
+                                ]
+                            },
+                            Case {
+                                tests: vec![Expr::int(3),],
+                                body: vec![
+                                    StmtKind::Assignment {
+                                        full_ident: FullIdent::ident("y"),
+                                        value: Box::new(Expr::int(3)),
+                                    }
+                                    .into()
+                                ]
+                            },
+                        ],
+                        else_stmt: Some(vec![
+                            StmtKind::Assignment {
+                                full_ident: FullIdent::ident("y"),
+                                value: Box::new(Expr::int(4)),
+                            }
+                            .into()
+                        ]),
+                    }
+                    .into()
+                )
+                .into()
+            ]
         );
     }
 
@@ -2024,49 +2550,72 @@ Const a = 1			' some info
         let items = parse_file(input);
         assert_eq!(
             items,
-            vec![Item::Statement(Stmt::SelectCase {
-                test_expr: Box::new(Expr::Literal(Lit::Bool(true))),
-                cases: vec![
-                    Case {
-                        tests: vec![InfixOp {
-                            op: T![and],
-                            lhs: Box::new(InfixOp {
-                                op: T![=],
-                                lhs: Box::new(Expr::ident("x")),
-                                rhs: Box::new(Expr::int(1)),
-                            }),
-                            rhs: Box::new(InfixOp {
-                                op: T![=],
-                                lhs: Box::new(Expr::ident("y")),
-                                rhs: Box::new(Expr::int(2)),
-                            }),
-                        },],
-                        body: vec![Stmt::Assignment {
-                            full_ident: FullIdent::ident("z"),
-                            value: Box::new(Expr::int(2)),
-                        }]
-                    },
-                    Case {
-                        tests: vec![
-                            InfixOp {
-                                op: T![=],
-                                lhs: Box::new(Expr::ident("x")),
-                                rhs: Box::new(Expr::int(1)),
+            vec![
+                ItemKind::Statement(
+                    StmtKind::SelectCase {
+                        test_expr: Box::new(ExprKind::Literal(Lit::Bool(true)).into()),
+                        cases: vec![
+                            Case {
+                                tests: vec![
+                                    InfixOp {
+                                        op: T![and],
+                                        lhs: Box::new(
+                                            InfixOp {
+                                                op: T![=],
+                                                lhs: Box::new(Expr::ident("x")),
+                                                rhs: Box::new(Expr::int(1)),
+                                            }
+                                            .into()
+                                        ),
+                                        rhs: Box::new(
+                                            InfixOp {
+                                                op: T![=],
+                                                lhs: Box::new(Expr::ident("y")),
+                                                rhs: Box::new(Expr::int(2)),
+                                            }
+                                            .into()
+                                        ),
+                                    }
+                                    .into(),
+                                ],
+                                body: vec![
+                                    StmtKind::Assignment {
+                                        full_ident: FullIdent::ident("z"),
+                                        value: Box::new(Expr::int(2)),
+                                    }
+                                    .into()
+                                ]
                             },
-                            InfixOp {
-                                op: T![=],
-                                lhs: Box::new(Expr::ident("y")),
-                                rhs: Box::new(Expr::int(2)),
-                            },
+                            Case {
+                                tests: vec![
+                                    InfixOp {
+                                        op: T![=],
+                                        lhs: Box::new(Expr::ident("x")),
+                                        rhs: Box::new(Expr::int(1)),
+                                    }
+                                    .into(),
+                                    InfixOp {
+                                        op: T![=],
+                                        lhs: Box::new(Expr::ident("y")),
+                                        rhs: Box::new(Expr::int(2)),
+                                    }
+                                    .into(),
+                                ],
+                                body: vec![
+                                    StmtKind::Assignment {
+                                        full_ident: FullIdent::ident("z"),
+                                        value: Box::new(Expr::int(3)),
+                                    }
+                                    .into()
+                                ]
+                            }
                         ],
-                        body: vec![Stmt::Assignment {
-                            full_ident: FullIdent::ident("z"),
-                            value: Box::new(Expr::int(3)),
-                        }]
+                        else_stmt: None,
                     }
-                ],
-                else_stmt: None,
-            })]
+                    .into()
+                )
+                .into()
+            ]
         );
     }
 
@@ -2081,20 +2630,32 @@ Const a = 1			' some info
         let items = parse_file(input);
         assert_eq!(
             items,
-            vec![Item::Statement(Stmt::SelectCase {
-                test_expr: Box::new(Expr::ident("x")),
-                cases: vec![Case {
-                    tests: vec![Expr::int(1), Expr::int(2),],
-                    body: vec![Stmt::Assignment {
-                        full_ident: FullIdent::ident("y"),
-                        value: Box::new(Expr::int(2)),
-                    }]
-                },],
-                else_stmt: Some(vec![Stmt::Assignment {
-                    full_ident: FullIdent::ident("y"),
-                    value: Box::new(Expr::int(4)),
-                }]),
-            })]
+            vec![
+                ItemKind::Statement(
+                    StmtKind::SelectCase {
+                        test_expr: Box::new(Expr::ident("x")),
+                        cases: vec![Case {
+                            tests: vec![Expr::int(1), Expr::int(2),],
+                            body: vec![
+                                StmtKind::Assignment {
+                                    full_ident: FullIdent::ident("y"),
+                                    value: Box::new(Expr::int(2)),
+                                }
+                                .into()
+                            ]
+                        },],
+                        else_stmt: Some(vec![
+                            StmtKind::Assignment {
+                                full_ident: FullIdent::ident("y"),
+                                value: Box::new(Expr::int(4)),
+                            }
+                            .into()
+                        ]),
+                    }
+                    .into()
+                )
+                .into()
+            ]
         );
     }
 
@@ -2110,38 +2671,52 @@ Const a = 1			' some info
         let items = parse_file(input);
         assert_eq!(
             items,
-            vec![Item::Statement(Stmt::SelectCase {
-                test_expr: Box::new(Expr::ident("keycode")),
-                cases: vec![
-                    Case {
-                        tests: vec![Expr::ident("keyA")],
-                        body: vec![
-                            Stmt::SubCall {
-                                fn_name: FullIdent::ident("MySub"),
-                                args: vec![Some(Expr::Literal(Lit::Bool(true)))],
+            vec![
+                ItemKind::Statement(
+                    StmtKind::SelectCase {
+                        test_expr: Box::new(Expr::ident("keycode")),
+                        cases: vec![
+                            Case {
+                                tests: vec![Expr::ident("keyA")],
+                                body: vec![
+                                    StmtKind::SubCall {
+                                        fn_name: FullIdent::ident("MySub"),
+                                        args: vec![Some(ExprKind::Literal(Lit::Bool(true)).into())],
+                                    }
+                                    .into(),
+                                    StmtKind::SubCall {
+                                        fn_name: FullIdent::ident("OtherSub"),
+                                        args: vec![Some(Expr::int(1))],
+                                    }
+                                    .into()
+                                ],
                             },
-                            Stmt::SubCall {
-                                fn_name: FullIdent::ident("OtherSub"),
-                                args: vec![Some(Expr::int(1))],
-                            }
+                            Case {
+                                tests: vec![Expr::int(82),],
+                                body: vec![
+                                    StmtKind::Assignment {
+                                        full_ident: FullIdent::new(Expr::fn_application(
+                                            Expr::member(WithScoped.into(), "Switch"),
+                                            vec![Expr::ident("swCPUDiag")]
+                                        )),
+                                        value: Box::new(Expr::ident("t")),
+                                    }
+                                    .into()
+                                ]
+                            },
                         ],
-                    },
-                    Case {
-                        tests: vec![Expr::int(82),],
-                        body: vec![Stmt::Assignment {
-                            full_ident: FullIdent::new(Expr::fn_application(
-                                Expr::member(WithScoped, "Switch"),
-                                vec![Expr::ident("swCPUDiag")]
-                            )),
-                            value: Box::new(Expr::ident("t")),
-                        }]
-                    },
-                ],
-                else_stmt: Some(vec![Stmt::SubCall {
-                    fn_name: FullIdent::ident("DoNothing"),
-                    args: vec![],
-                }]),
-            })]
+                        else_stmt: Some(vec![
+                            StmtKind::SubCall {
+                                fn_name: FullIdent::ident("DoNothing"),
+                                args: vec![],
+                            }
+                            .into()
+                        ]),
+                    }
+                    .into()
+                )
+                .into()
+            ]
         );
     }
 
@@ -2156,17 +2731,26 @@ Const a = 1			' some info
         let items = parse_file(input);
         assert_eq!(
             items,
-            vec![Item::Statement(Stmt::SelectCase {
-                test_expr: Box::new(Expr::ident("serviceLevel")),
-                cases: vec![Case {
-                    tests: vec![Expr::ident("kMenuTop"), Expr::ident("kMenuNone"),],
-                    body: vec![Stmt::Assignment {
-                        full_ident: FullIdent::ident("bInService"),
-                        value: Box::new(Expr::Literal(Lit::Bool(false))),
-                    }]
-                },],
-                else_stmt: None,
-            })]
+            vec![
+                ItemKind::Statement(
+                    StmtKind::SelectCase {
+                        test_expr: Box::new(Expr::ident("serviceLevel")),
+                        cases: vec![Case {
+                            tests: vec![Expr::ident("kMenuTop"), Expr::ident("kMenuNone"),],
+                            body: vec![
+                                StmtKind::Assignment {
+                                    full_ident: FullIdent::ident("bInService"),
+                                    value: Box::new(ExprKind::Literal(Lit::Bool(false)).into()),
+                                }
+                                .into()
+                            ]
+                        },],
+                        else_stmt: None,
+                    }
+                    .into()
+                )
+                .into()
+            ]
         );
     }
 
@@ -2181,16 +2765,16 @@ Const a = 1			' some info
         #[rustfmt::skip]
         assert_eq!(
             stmt,
-            Stmt::IfStmt {
-                condition: Box::new(Expr::PrefixOp {
+            StmtKind::IfStmt {
+                condition: Box::new(ExprKind::PrefixOp {
                     op: T![not],
                     expr: Box::new(InfixOp {
                         op: T![is],
                         lhs: Box::new(Expr::ident("Controller")),
-                        rhs: Box::new(Expr::Literal(Lit::Nothing)),
-                    }),
-                }),
-                body: vec![Stmt::SubCall {
+                        rhs: Box::new(ExprKind::Literal(Lit::Nothing).into()),
+                    }.into()),
+                }.into()),
+                body: vec![StmtKind::SubCall {
                     fn_name: FullIdent::new(
                         Expr::member(
                             Expr::ident("Controller"),
@@ -2198,10 +2782,10 @@ Const a = 1			' some info
                         ),
                     ),
                     args: vec![],
-                },],
+                }.into(),],
                 elseif_statements: vec![],
                 else_stmt: None,
-            }
+            }.into()
         );
     }
 
@@ -2211,10 +2795,11 @@ Const a = 1			' some info
         let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
-            Stmt::SubCall {
+            StmtKind::SubCall {
                 fn_name: FullIdent::ident("DoSomething"),
                 args: vec![Some(Expr::int(1)), None, Some(Expr::str("test")),],
             }
+            .into()
         );
     }
 
@@ -2226,19 +2811,22 @@ Const a = 1			' some info
         let items = parse_file(input);
         assert_eq!(
             items,
-            vec![Item::Class {
-                name: "NullFadingObject".to_string(),
-                members: vec![],
-                dims: vec![],
-                member_accessors: vec![MemberAccess {
-                    name: "IntensityScale".to_string(),
-                    visibility: PropertyVisibility::Public { default: false },
-                    property_type: PropertyType::Let,
-                    args: vec![("input".to_string(), ArgumentType::ByVal),],
-                    body: vec![],
-                }],
-                methods: vec![],
-            }]
+            vec![
+                ItemKind::Class {
+                    name: "NullFadingObject".to_string(),
+                    members: vec![],
+                    dims: vec![],
+                    member_accessors: vec![MemberAccess {
+                        name: "IntensityScale".to_string(),
+                        visibility: PropertyVisibility::Public { default: false },
+                        property_type: PropertyType::Let,
+                        args: vec![("input".to_string(), ArgumentType::ByVal),],
+                        body: vec![],
+                    }],
+                    methods: vec![],
+                }
+                .into()
+            ]
         );
     }
 
@@ -2253,28 +2841,31 @@ Const a = 1			' some info
         let items = parse_file(input);
         assert_eq!(
             items,
-            vec![Item::Class {
-                name: "MyClass".to_string(),
-                members: vec![
-                    MemberDefinitions {
-                        visibility: Visibility::Public,
-                        properties: vec![
-                            ("Foo".to_string(), None),
-                            ("Bar".to_string(), Some(vec![9, 0])),
-                        ],
-                    },
-                    MemberDefinitions {
-                        visibility: Visibility::Private,
-                        properties: vec![
-                            ("Qux".to_string(), Some(vec![1])),
-                            ("Baz".to_string(), None),
-                        ],
-                    },
-                ],
-                dims: vec![],
-                member_accessors: vec![],
-                methods: vec![],
-            }]
+            vec![
+                ItemKind::Class {
+                    name: "MyClass".to_string(),
+                    members: vec![
+                        MemberDefinitions {
+                            visibility: Visibility::Public,
+                            properties: vec![
+                                ("Foo".to_string(), None),
+                                ("Bar".to_string(), Some(vec![9, 0])),
+                            ],
+                        },
+                        MemberDefinitions {
+                            visibility: Visibility::Private,
+                            properties: vec![
+                                ("Qux".to_string(), Some(vec![1])),
+                                ("Baz".to_string(), None),
+                            ],
+                        },
+                    ],
+                    dims: vec![],
+                    member_accessors: vec![],
+                    methods: vec![],
+                }
+                .into()
+            ]
         );
     }
 
@@ -2289,22 +2880,25 @@ Const a = 1			' some info
         let items = parse_file(input);
         assert_eq!(
             items,
-            vec![Item::Class {
-                name: "MyClass".to_string(),
-                members: vec![],
-                dims: vec![
-                    vec![
-                        ("Foo".to_string(), None),
-                        ("Bar".to_string(), Some(vec![9, 0])),
+            vec![
+                ItemKind::Class {
+                    name: "MyClass".to_string(),
+                    members: vec![],
+                    dims: vec![
+                        vec![
+                            ("Foo".to_string(), None),
+                            ("Bar".to_string(), Some(vec![9, 0])),
+                        ],
+                        vec![
+                            ("Qux".to_string(), Some(vec![1])),
+                            ("Baz".to_string(), None),
+                        ]
                     ],
-                    vec![
-                        ("Qux".to_string(), Some(vec![1])),
-                        ("Baz".to_string(), None),
-                    ]
-                ],
-                member_accessors: vec![],
-                methods: vec![],
-            }]
+                    member_accessors: vec![],
+                    methods: vec![],
+                }
+                .into()
+            ]
         );
     }
 
@@ -2324,32 +2918,40 @@ Const a = 1			' some info
         let items = parse_file(input);
         assert_eq!(
             items,
-            vec![Item::Class {
-                name: "MyClass".to_string(),
-                members: vec![MemberDefinitions {
-                    visibility: Visibility::Public,
-                    properties: vec![("Enabled".to_string(), None)],
-                },],
-                dims: vec![],
-                member_accessors: vec![],
-                methods: vec![
-                    Stmt::Sub {
+            vec![
+                ItemKind::Class {
+                    name: "MyClass".to_string(),
+                    members: vec![MemberDefinitions {
                         visibility: Visibility::Public,
-                        name: "Class_Initialize".to_string(),
-                        parameters: vec![],
-                        body: vec![Stmt::Assignment {
-                            full_ident: FullIdent::ident("Enabled"),
-                            value: Box::new(Expr::Literal(Lit::Bool(true))),
-                        }],
-                    },
-                    Stmt::Sub {
-                        visibility: Visibility::Private,
-                        name: "Class_Terminate".to_string(),
-                        parameters: vec![],
-                        body: vec![],
-                    }
-                ],
-            },]
+                        properties: vec![("Enabled".to_string(), None)],
+                    },],
+                    dims: vec![],
+                    member_accessors: vec![],
+                    methods: vec![
+                        StmtKind::Sub {
+                            visibility: Visibility::Public,
+                            name: "Class_Initialize".to_string(),
+                            parameters: vec![],
+                            body: vec![
+                                StmtKind::Assignment {
+                                    full_ident: FullIdent::ident("Enabled"),
+                                    value: Box::new(ExprKind::Literal(Lit::Bool(true)).into()),
+                                }
+                                .into()
+                            ],
+                        }
+                        .into(),
+                        StmtKind::Sub {
+                            visibility: Visibility::Private,
+                            name: "Class_Terminate".to_string(),
+                            parameters: vec![],
+                            body: vec![],
+                        }
+                        .into()
+                    ],
+                }
+                .into(),
+            ]
         );
     }
 
@@ -2367,37 +2969,37 @@ Const a = 1			' some info
         #[rustfmt::skip]
         assert_eq!(
             items,
-            vec![Item::Statement(Stmt::With {
+            vec![ItemKind::Statement(StmtKind::With {
                 object: FullIdent::ident("Controller"),
                 body: vec![
-                    Stmt::IfStmt {
+                    StmtKind::IfStmt {
                         condition: Box::new(InfixOp {
                             op: T![=],
                             lhs: Box::new(Expr::ident("usePUP")),
                             rhs: Box::new(Expr::bool(false)),
-                        }),
-                        body: vec![Stmt::Assignment {
-                            full_ident: FullIdent::new(Expr::member(WithScoped, "PuPHide")),
+                        }.into()),
+                        body: vec![StmtKind::Assignment {
+                            full_ident: FullIdent::new(Expr::member(WithScoped.into(), "PuPHide")),
                             value: Box::new(Expr::int(1)),
-                        }],
+                        }.into()],
                         elseif_statements: vec![],
-                        else_stmt: Some(vec![Stmt::Assignment {
-                            full_ident: FullIdent::new(Expr::member(WithScoped, "PuPHide")),
+                        else_stmt: Some(vec![StmtKind::Assignment {
+                            full_ident: FullIdent::new(Expr::member(WithScoped.into(), "PuPHide")),
                             value: Box::new(Expr::int(2)),
-                        }]),
-                    },
-                    Stmt::IfStmt {
+                        }.into()]),
+                    }.into(),
+                    StmtKind::IfStmt {
                         condition: Box::new(InfixOp {
                             op: T![=],
                             lhs: Box::new(Expr::ident("Mute")),
                             rhs: Box::new(Expr::int(1)),
-                        }),
-                        body: vec![Stmt::Assignment {
+                        }.into()),
+                        body: vec![StmtKind::Assignment {
                             full_ident: FullIdent::new(Expr::fn_application(
                                 Expr::member(
                                     Expr::member(
                                         Expr::fn_application(
-                                            Expr::member(WithScoped, "Games"),
+                                            Expr::member(WithScoped.into(), "Games"),
                                             vec![Expr::ident("cGameName")],
                                         ),
                                         "Settings",
@@ -2407,12 +3009,12 @@ Const a = 1			' some info
                                 vec![Expr::str("sound")],
                             )),
                             value: Box::new(Expr::int(0)),
-                        }],
+                        }.into()],
                         elseif_statements: vec![],
                         else_stmt: None,
-                    },
+                    }.into(),
                 ],
-            })]
+            }.into()).into()]
         );
     }
 
@@ -2429,7 +3031,7 @@ Const a = 1			' some info
         #[rustfmt::skip]
         assert_eq!(
             items,
-            vec![Item::Statement(Stmt::With {
+            vec![ItemKind::Statement(StmtKind::With {
                 object: FullIdent::new(
                     Expr::member(
                         Expr::ident("foo"),
@@ -2437,36 +3039,36 @@ Const a = 1			' some info
                     )
                 ),
                 body: vec![
-                    Stmt::Assignment {
+                    StmtKind::Assignment {
                         full_ident: FullIdent::new(
                             Expr::member(
-                                WithScoped,
+                                WithScoped.into(),
                                 "bar"
                             )
                         ),
                         value: Box::new(Expr::int(1)),
-                    },
-                    Stmt::Assignment {
+                    }.into(),
+                    StmtKind::Assignment {
                         full_ident: FullIdent::new(
                             Expr::member(
                                 Expr::member(
-                                    WithScoped,
+                                    WithScoped.into(),
                                     "baz"
                                 ),
                                 "z"
                             )
                         ),
                         value: Box::new(Expr::ident("x")),
-                    },
-                    Stmt::Assignment {
+                    }.into(),
+                    StmtKind::Assignment {
                         full_ident: FullIdent::ident("x"),
                         value: Box::new(Expr::member(
-                            WithScoped,
+                            WithScoped.into(),
                             "qux"
                         )),
-                    },
+                    }.into(),
                 ],
-            })]
+            }.into()).into()]
         );
     }
 
@@ -2480,13 +3082,21 @@ Const a = 1			' some info
         assert_eq!(
             items,
             vec![
-                Item::Statement(Stmt::Dim {
-                    vars: vec![("LutToggleSoundLevel".to_string(), vec![])],
-                }),
-                Item::Statement(Stmt::Assignment {
-                    full_ident: FullIdent::ident("LutToggleSoundLevel"),
-                    value: Box::new(Expr::Literal(Lit::Float(0.5))),
-                }),
+                ItemKind::Statement(
+                    StmtKind::Dim {
+                        vars: vec![("LutToggleSoundLevel".to_string(), vec![])],
+                    }
+                    .into()
+                )
+                .into(),
+                ItemKind::Statement(
+                    StmtKind::Assignment {
+                        full_ident: FullIdent::ident("LutToggleSoundLevel"),
+                        value: Box::new(ExprKind::Literal(Lit::Float(0.5)).into()),
+                    }
+                    .into()
+                )
+                .into(),
             ]
         );
     }
@@ -2497,13 +3107,14 @@ Const a = 1			' some info
         let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
-            Stmt::Assignment {
+            StmtKind::Assignment {
                 full_ident: FullIdent::new(Expr::fn_application(
                     Expr::fn_application(Expr::ident("foo"), vec![Expr::int(1)]),
                     vec![Expr::int(2)]
                 )),
                 value: Box::new(Expr::int(3)),
             }
+            .into()
         );
     }
 
@@ -2519,14 +3130,14 @@ Const a = 1			' some info
         assert_eq!(
             items,
             vec![
-                Item::Statement(Stmt::Call(FullIdent::ident("MyFunction"))),
-                Item::Statement(Stmt::Call(FullIdent::new(
+                ItemKind::Statement(StmtKind::Call(FullIdent::ident("MyFunction")).into()).into(),
+                ItemKind::Statement(StmtKind::Call(FullIdent::new(
                     Expr::fn_application(
                         Expr::ident("MyOtherFunction"),
                         vec![Expr::int(1), Expr::int(2)]
                     )
-                ))),
-                Item::Statement(Stmt::Call(FullIdent::new(
+                )).into()).into(),
+                ItemKind::Statement(StmtKind::Call(FullIdent::new(
                     Expr::fn_application(
                         Expr::fn_application(
                             Expr::ident("mQue3"),
@@ -2537,7 +3148,7 @@ Const a = 1			' some info
                             vec![Expr::ident("ii")]
                         )]
                     )
-                ))),
+                )).into()).into(),
             ]
         );
     }
@@ -2589,10 +3200,11 @@ Const a = 1			' some info
         let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
-            Stmt::SubCall {
+            StmtKind::SubCall {
                 fn_name: FullIdent::ident("DoSomething"),
                 args: vec![Some(Expr::int(1)), Some(Expr::int(0))],
             }
+            .into()
         );
     }
 
@@ -2629,18 +3241,25 @@ Const a = 1			' some info
         let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
-            Stmt::SubCall {
+            StmtKind::SubCall {
                 fn_name: FullIdent::ident("DoSomething"),
-                args: vec![Some(Expr::InfixOp {
-                    op: T![*],
-                    lhs: Box::new(Expr::InfixOp {
-                        op: T![+],
-                        lhs: Box::new(Expr::ident("x")),
-                        rhs: Box::new(Expr::ident("y")),
-                    }),
-                    rhs: Box::new(Expr::ident("z"))
-                })],
-            },
+                args: vec![Some(
+                    ExprKind::InfixOp {
+                        op: T![*],
+                        lhs: Box::new(
+                            ExprKind::InfixOp {
+                                op: T![+],
+                                lhs: Box::new(Expr::ident("x")),
+                                rhs: Box::new(Expr::ident("y")),
+                            }
+                            .into()
+                        ),
+                        rhs: Box::new(Expr::ident("z"))
+                    }
+                    .into()
+                )],
+            }
+            .into(),
         );
     }
 
@@ -2653,18 +3272,25 @@ Const a = 1			' some info
         let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
-            Stmt::SubCall {
+            StmtKind::SubCall {
                 fn_name: FullIdent::ident("DoSomething"),
-                args: vec![Some(Expr::InfixOp {
-                    op: T![*],
-                    lhs: Box::new(Expr::ident("z")),
-                    rhs: Box::new(Expr::InfixOp {
-                        op: T![+],
-                        lhs: Box::new(Expr::ident("x")),
-                        rhs: Box::new(Expr::ident("y")),
-                    }),
-                })],
-            },
+                args: vec![Some(
+                    ExprKind::InfixOp {
+                        op: T![*],
+                        lhs: Box::new(Expr::ident("z")),
+                        rhs: Box::new(
+                            ExprKind::InfixOp {
+                                op: T![+],
+                                lhs: Box::new(Expr::ident("x")),
+                                rhs: Box::new(Expr::ident("y")),
+                            }
+                            .into()
+                        ),
+                    }
+                    .into()
+                )],
+            }
+            .into(),
         );
     }
 
@@ -2675,21 +3301,31 @@ Const a = 1			' some info
         let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
-            Stmt::Assignment {
+            StmtKind::Assignment {
                 full_ident: FullIdent::ident("x"),
-                value: Box::new(Expr::InfixOp {
-                    op: T![*],
-                    lhs: Box::new(Expr::FnApplication {
-                        callee: Box::new(Expr::ident("AddScore")),
-                        args: vec![Some(Expr::InfixOp {
-                            op: T![+],
-                            lhs: Box::new(Expr::ident("x")),
-                            rhs: Box::new(Expr::ident("y")),
-                        })],
-                    }),
-                    rhs: Box::new(Expr::ident("z")),
-                }),
-            },
+                value: Box::new(
+                    ExprKind::InfixOp {
+                        op: T![*],
+                        lhs: Box::new(
+                            ExprKind::FnApplication {
+                                callee: Box::new(Expr::ident("AddScore")),
+                                args: vec![Some(
+                                    ExprKind::InfixOp {
+                                        op: T![+],
+                                        lhs: Box::new(Expr::ident("x")),
+                                        rhs: Box::new(Expr::ident("y")),
+                                    }
+                                    .into()
+                                )],
+                            }
+                            .into()
+                        ),
+                        rhs: Box::new(Expr::ident("z")),
+                    }
+                    .into()
+                ),
+            }
+            .into(),
         );
     }
 
@@ -2699,20 +3335,27 @@ Const a = 1			' some info
         let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
-            Stmt::SubCall {
+            StmtKind::SubCall {
                 fn_name: FullIdent::ident("MySub"),
-                args: vec![Some(Expr::FnApplication {
-                    callee: Box::new(Expr::ident("MyFn")),
-                    args: vec![
-                        Some(Expr::int(0)),
-                        None,
-                        Some(Expr::PrefixOp {
-                            op: T![-],
-                            expr: Box::new(Expr::int(1)),
-                        })
-                    ],
-                })]
+                args: vec![Some(
+                    ExprKind::FnApplication {
+                        callee: Box::new(Expr::ident("MyFn")),
+                        args: vec![
+                            Some(Expr::int(0)),
+                            None,
+                            Some(
+                                ExprKind::PrefixOp {
+                                    op: T![-],
+                                    expr: Box::new(Expr::int(1)),
+                                }
+                                .into()
+                            )
+                        ],
+                    }
+                    .into()
+                )]
             }
+            .into()
         );
     }
 
@@ -2722,12 +3365,18 @@ Const a = 1			' some info
         let items = parse_file(input);
         assert_eq!(
             items,
-            vec![Item::Statement(Stmt::Function {
-                visibility: Visibility::Default,
-                name: "NullFunction".to_string(),
-                parameters: vec![Argument::ByVal("a".to_string())],
-                body: vec![],
-            })]
+            vec![
+                ItemKind::Statement(
+                    StmtKind::Function {
+                        visibility: Visibility::Default,
+                        name: "NullFunction".to_string(),
+                        parameters: vec![Argument::ByVal("a".to_string())],
+                        body: vec![],
+                    }
+                    .into()
+                )
+                .into()
+            ]
         );
     }
 
@@ -2737,12 +3386,18 @@ Const a = 1			' some info
         let items = parse_file(input);
         assert_eq!(
             items,
-            vec![Item::Statement(Stmt::Function {
-                visibility: Visibility::Default,
-                name: "NullFunction".to_string(),
-                parameters: vec![Argument::ByVal("a".to_string())],
-                body: vec![],
-            })]
+            vec![
+                ItemKind::Statement(
+                    StmtKind::Function {
+                        visibility: Visibility::Default,
+                        name: "NullFunction".to_string(),
+                        parameters: vec![Argument::ByVal("a".to_string())],
+                        body: vec![],
+                    }
+                    .into()
+                )
+                .into()
+            ]
         );
     }
 
@@ -2756,21 +3411,36 @@ Const a = 1			' some info
         let items = parse_file(input);
         assert_eq!(
             items,
-            vec![Item::Statement(Stmt::DoLoop {
-                check: DoLoopCheck::Pre(DoLoopCondition::While(Box::new(InfixOp {
-                    op: T![>],
-                    lhs: Box::new(Expr::ident("x")),
-                    rhs: Box::new(Expr::int(0)),
-                }))),
-                body: vec![Stmt::Assignment {
-                    full_ident: FullIdent::ident("x"),
-                    value: Box::new(InfixOp {
-                        op: T![-],
-                        lhs: Box::new(Expr::ident("x")),
-                        rhs: Box::new(Expr::int(1)),
-                    }),
-                }],
-            })]
+            vec![
+                ItemKind::Statement(
+                    StmtKind::DoLoop {
+                        check: DoLoopCheck::Pre(DoLoopCondition::While(Box::new(
+                            InfixOp {
+                                op: T![>],
+                                lhs: Box::new(Expr::ident("x")),
+                                rhs: Box::new(Expr::int(0)),
+                            }
+                            .into()
+                        ))),
+                        body: vec![
+                            StmtKind::Assignment {
+                                full_ident: FullIdent::ident("x"),
+                                value: Box::new(
+                                    InfixOp {
+                                        op: T![-],
+                                        lhs: Box::new(Expr::ident("x")),
+                                        rhs: Box::new(Expr::int(1)),
+                                    }
+                                    .into()
+                                ),
+                            }
+                            .into()
+                        ],
+                    }
+                    .into()
+                )
+                .into()
+            ]
         );
     }
 
@@ -2785,21 +3455,36 @@ Const a = 1			' some info
         let items = parse_file(input);
         assert_eq!(
             items,
-            vec![Item::Statement(Stmt::DoLoop {
-                check: DoLoopCheck::Pre(DoLoopCondition::Until(Box::new(InfixOp {
-                    op: T![=],
-                    lhs: Box::new(Expr::ident("x")),
-                    rhs: Box::new(Expr::int(0)),
-                }))),
-                body: vec![Stmt::Assignment {
-                    full_ident: FullIdent::ident("x"),
-                    value: Box::new(InfixOp {
-                        op: T![-],
-                        lhs: Box::new(Expr::ident("x")),
-                        rhs: Box::new(Expr::int(1)),
-                    }),
-                }],
-            })]
+            vec![
+                ItemKind::Statement(
+                    StmtKind::DoLoop {
+                        check: DoLoopCheck::Pre(DoLoopCondition::Until(Box::new(
+                            InfixOp {
+                                op: T![=],
+                                lhs: Box::new(Expr::ident("x")),
+                                rhs: Box::new(Expr::int(0)),
+                            }
+                            .into()
+                        ))),
+                        body: vec![
+                            StmtKind::Assignment {
+                                full_ident: FullIdent::ident("x"),
+                                value: Box::new(
+                                    InfixOp {
+                                        op: T![-],
+                                        lhs: Box::new(Expr::ident("x")),
+                                        rhs: Box::new(Expr::int(1)),
+                                    }
+                                    .into()
+                                ),
+                            }
+                            .into()
+                        ],
+                    }
+                    .into()
+                )
+                .into()
+            ]
         );
     }
 
@@ -2813,21 +3498,36 @@ Const a = 1			' some info
         let items = parse_file(input);
         assert_eq!(
             items,
-            vec![Item::Statement(Stmt::DoLoop {
-                check: DoLoopCheck::Post(DoLoopCondition::While(Box::new(InfixOp {
-                    op: T![>],
-                    lhs: Box::new(Expr::ident("x")),
-                    rhs: Box::new(Expr::int(0)),
-                }))),
-                body: vec![Stmt::Assignment {
-                    full_ident: FullIdent::ident("x"),
-                    value: Box::new(InfixOp {
-                        op: T![-],
-                        lhs: Box::new(Expr::ident("x")),
-                        rhs: Box::new(Expr::int(1)),
-                    }),
-                }],
-            })]
+            vec![
+                ItemKind::Statement(
+                    StmtKind::DoLoop {
+                        check: DoLoopCheck::Post(DoLoopCondition::While(Box::new(
+                            InfixOp {
+                                op: T![>],
+                                lhs: Box::new(Expr::ident("x")),
+                                rhs: Box::new(Expr::int(0)),
+                            }
+                            .into()
+                        ))),
+                        body: vec![
+                            StmtKind::Assignment {
+                                full_ident: FullIdent::ident("x"),
+                                value: Box::new(
+                                    InfixOp {
+                                        op: T![-],
+                                        lhs: Box::new(Expr::ident("x")),
+                                        rhs: Box::new(Expr::int(1)),
+                                    }
+                                    .into()
+                                ),
+                            }
+                            .into()
+                        ],
+                    }
+                    .into()
+                )
+                .into()
+            ]
         );
     }
 
@@ -2841,21 +3541,36 @@ Const a = 1			' some info
         let items = parse_file(input);
         assert_eq!(
             items,
-            vec![Item::Statement(Stmt::DoLoop {
-                check: DoLoopCheck::Post(DoLoopCondition::Until(Box::new(InfixOp {
-                    op: T![=],
-                    lhs: Box::new(Expr::ident("x")),
-                    rhs: Box::new(Expr::int(0)),
-                }))),
-                body: vec![Stmt::Assignment {
-                    full_ident: FullIdent::ident("x"),
-                    value: Box::new(InfixOp {
-                        op: T![-],
-                        lhs: Box::new(Expr::ident("x")),
-                        rhs: Box::new(Expr::int(1)),
-                    }),
-                }],
-            })]
+            vec![
+                ItemKind::Statement(
+                    StmtKind::DoLoop {
+                        check: DoLoopCheck::Post(DoLoopCondition::Until(Box::new(
+                            InfixOp {
+                                op: T![=],
+                                lhs: Box::new(Expr::ident("x")),
+                                rhs: Box::new(Expr::int(0)),
+                            }
+                            .into()
+                        ))),
+                        body: vec![
+                            StmtKind::Assignment {
+                                full_ident: FullIdent::ident("x"),
+                                value: Box::new(
+                                    InfixOp {
+                                        op: T![-],
+                                        lhs: Box::new(Expr::ident("x")),
+                                        rhs: Box::new(Expr::int(1)),
+                                    }
+                                    .into()
+                                ),
+                            }
+                            .into()
+                        ],
+                    }
+                    .into()
+                )
+                .into()
+            ]
         );
     }
 
@@ -2870,29 +3585,43 @@ Const a = 1			' some info
         let items = parse_file(input);
         assert_eq!(
             items,
-            vec![Item::Statement(Stmt::DoLoop {
-                check: DoLoopCheck::None,
-                body: vec![
-                    Stmt::Assignment {
-                        full_ident: FullIdent::ident("x"),
-                        value: Box::new(InfixOp {
-                            op: T![-],
-                            lhs: Box::new(Expr::ident("x")),
-                            rhs: Box::new(Expr::int(1)),
-                        }),
-                    },
-                    Stmt::IfStmt {
-                        condition: Box::new(InfixOp {
-                            op: T![=],
-                            lhs: Box::new(Expr::ident("x")),
-                            rhs: Box::new(Expr::int(0)),
-                        }),
-                        body: vec![Stmt::ExitDo],
-                        elseif_statements: vec![],
-                        else_stmt: None,
-                    },
-                ],
-            })]
+            vec![
+                ItemKind::Statement(
+                    StmtKind::DoLoop {
+                        check: DoLoopCheck::None,
+                        body: vec![
+                            StmtKind::Assignment {
+                                full_ident: FullIdent::ident("x"),
+                                value: Box::new(
+                                    InfixOp {
+                                        op: T![-],
+                                        lhs: Box::new(Expr::ident("x")),
+                                        rhs: Box::new(Expr::int(1)),
+                                    }
+                                    .into()
+                                ),
+                            }
+                            .into(),
+                            StmtKind::IfStmt {
+                                condition: Box::new(
+                                    InfixOp {
+                                        op: T![=],
+                                        lhs: Box::new(Expr::ident("x")),
+                                        rhs: Box::new(Expr::int(0)),
+                                    }
+                                    .into()
+                                ),
+                                body: vec![StmtKind::ExitDo.into()],
+                                elseif_statements: vec![],
+                                else_stmt: None,
+                            }
+                            .into(),
+                        ],
+                    }
+                    .into()
+                )
+                .into()
+            ]
         );
     }
 
@@ -2902,13 +3631,14 @@ Const a = 1			' some info
         let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
-            Stmt::SubCall {
+            StmtKind::SubCall {
                 fn_name: FullIdent::ident("Foo"),
                 args: vec![
                     Some(Expr::int(1)),
-                    Some(Expr::member(WithScoped, "enabled")),
+                    Some(Expr::member(WithScoped.into(), "enabled")),
                 ],
             }
+            .into()
         );
     }
 
@@ -2937,13 +3667,13 @@ Const a = 1			' some info
         assert_eq!(
             file,
             vec![
-                Item::Statement(Stmt::Dim {
+                ItemKind::Statement(StmtKind::Dim {
                     vars: vec![("Error".to_string(), vec![])],
-                }),
-                Item::Statement(Stmt::Assignment {
+                }.into()).into(),
+                ItemKind::Statement(StmtKind::Assignment {
                     full_ident: FullIdent::ident("Error"),
                     value: Box::new(Expr::int(42)),
-                }),
+                }.into()).into(),
             ]
         );
     }
@@ -2960,26 +3690,26 @@ Const a = 1			' some info
         assert_eq!(
             file,
             vec![
-                Item::Statement(
-                    Stmt::Sub {
+                ItemKind::Statement(
+                    StmtKind::Sub {
                         visibility: Visibility::Default,
                         name: "MySub".to_string(),
                         parameters: vec![],
                         body: vec![
-                            Stmt::IfStmt {
+                            StmtKind::IfStmt {
                                 condition: Box::new(Expr::bool(true)),
                                 body: vec![
-                                    Stmt::Assignment {
+                                    StmtKind::Assignment {
                                         full_ident: FullIdent::ident("x"),
                                         value: Box::new(Expr::int(1)),
-                                    },
+                                    }.into(),
                                 ],
                                 elseif_statements: vec![],
                                 else_stmt: None,
-                            },
+                            }.into(),
                         ],
-                    }
-                )
+                    }.into()
+                ).into()
             ]
         );
     }
@@ -3012,34 +3742,34 @@ Const a = 1			' some info
         assert_eq!(
             file,
             vec![
-                Item::Class{
+                ItemKind::Class{
                     name: "Property".to_string(),
                     members: vec![],
                     dims: vec![],
                     member_accessors: vec![],
                     methods: vec![
-                        Stmt::Sub {
+                        StmtKind::Sub {
                             visibility: Visibility::Default,
                             name: "Property".to_string(),
                             parameters: vec![Argument::ByRef("property".to_string())],
                             body: vec![],
-                        },
+                        }.into(),
                     ],
-                },
-                Item::Class{
+                }.into(),
+                ItemKind::Class{
                     name: "Property2".to_string(),
                     members: vec![],
                     dims: vec![],
                     member_accessors: vec![],
                     methods: vec![
-                        Stmt::Function {
+                        StmtKind::Function {
                             visibility: Visibility::Default,
                             name: "Property".to_string(),
                             parameters: vec![],
                             body: vec![],
-                        },
+                        }.into(),
                     ],
-                },
+                }.into(),
             ]
         );
     }
@@ -3078,41 +3808,41 @@ Const a = 1			' some info
         assert_eq!(
             file,
             vec![
-                Item::Statement(Stmt::Dim {
+                ItemKind::Statement(StmtKind::Dim {
                     vars: vec![("default".to_string(), vec![])],
-                }),
-                Item::Statement(Stmt::Assignment {
+                }.into()).into(),
+                ItemKind::Statement(StmtKind::Assignment {
                     full_ident: FullIdent::ident("default"),
                     value: Box::new(Expr::int(1)),
-                }),
-                Item::Statement(Stmt::Dim {
+                }.into()).into(),
+                ItemKind::Statement(StmtKind::Dim {
                     vars: vec![("error".to_string(), vec![])],
-                }),
-                Item::Statement(Stmt::Assignment {
+                }.into()).into(),
+                ItemKind::Statement(StmtKind::Assignment {
                     full_ident: FullIdent::ident("error"),
                     value: Box::new(Expr::int(2)),
-                }),
-                Item::Statement(Stmt::Dim {
+                }.into()).into(),
+                ItemKind::Statement(StmtKind::Dim {
                     vars: vec![("explicit".to_string(), vec![])],
-                }),
-                Item::Statement(Stmt::Assignment {
+                }.into()).into(),
+                ItemKind::Statement(StmtKind::Assignment {
                     full_ident: FullIdent::ident("explicit"),
                     value: Box::new(Expr::int(3)),
-                }),
-                Item::Statement(Stmt::Dim {
+                }.into()).into(),
+                ItemKind::Statement(StmtKind::Dim {
                     vars: vec![("step".to_string(), vec![])],
-                }),
-                Item::Statement(Stmt::Assignment {
+                }.into()).into(),
+                ItemKind::Statement(StmtKind::Assignment {
                     full_ident: FullIdent::ident("step"),
                     value: Box::new(Expr::int(4)),
-                }),
-                Item::Statement(Stmt::Dim {
+                }.into()).into(),
+                ItemKind::Statement(StmtKind::Dim {
                     vars: vec![("property".to_string(), vec![])],
-                }),
-                Item::Statement(Stmt::Assignment {
+                }.into()).into(),
+                ItemKind::Statement(StmtKind::Assignment {
                     full_ident: FullIdent::ident("property"),
                     value: Box::new(Expr::int(5)),
-                }),
+                }.into()).into(),
             ]
         );
     }
@@ -3127,7 +3857,7 @@ Const a = 1			' some info
         assert_eq!(
             file,
             vec![
-                Item::Statement(Stmt::Call(FullIdent::new(
+                ItemKind::Statement(StmtKind::Call(FullIdent::new(
                     Expr::fn_application(
                         Expr::ident("ok"),
                         vec![
@@ -3135,19 +3865,19 @@ Const a = 1			' some info
                                 op: T![=],
                                 lhs: Box::new(Expr::ident("error")),
                                 rhs: Box::new(Expr::str("xx")),
-                            },
+                            }.into(),
                             InfixOp {
                                 op: T![&],
                                 lhs: Box::new(InfixOp {
                                     op: T![&],
                                     lhs: Box::new(Expr::str("error = ")),
                                     rhs: Box::new(Expr::ident("error")),
-                                }),
+                                }.into()),
                                 rhs: Box::new(Expr::str(" expected \"xx\"")),
-                            },
+                            }.into(),
                         ]
                     )
-                ))),
+                )).into()).into(),
             ]
         );
     }
@@ -3245,10 +3975,14 @@ Const a = 1			' some info
         "#};
 
         fn member_assign(name: &str) -> Item {
-            Item::Statement(Stmt::Assignment {
-                full_ident: FullIdent::new(Expr::member(Expr::ident("obj"), name)),
-                value: Box::new(Expr::int(10)),
-            })
+            ItemKind::Statement(
+                StmtKind::Assignment {
+                    full_ident: FullIdent::new(Expr::member(Expr::ident("obj"), name)),
+                    value: Box::new(Expr::int(10)),
+                }
+                .into(),
+            )
+            .into()
         }
         let file = parse_file(input);
         #[rustfmt::skip]
@@ -3322,14 +4056,18 @@ Const a = 1			' some info
         let stmt = parse_stmt(input, true);
         assert_eq!(
             stmt,
-            Stmt::SubCall {
+            StmtKind::SubCall {
                 fn_name: FullIdent::ident("MySub"),
-                args: vec![Some(InfixOp {
-                    op: T![&],
-                    lhs: Box::new(Expr::str("test")),
-                    rhs: Box::new(Expr::member(WithScoped, "prop")),
-                })],
+                args: vec![Some(
+                    InfixOp {
+                        op: T![&],
+                        lhs: Box::new(Expr::str("test")),
+                        rhs: Box::new(Expr::member(WithScoped.into(), "prop")),
+                    }
+                    .into()
+                )],
             }
+            .into()
         );
     }
 
