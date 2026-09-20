@@ -5,6 +5,7 @@ pub use token::{Token, TokenKind};
 use crate::T;
 
 mod generated;
+mod keyword;
 mod token;
 
 //pub type Lexer<'input> = CustomLexer<'input>;
@@ -64,30 +65,35 @@ impl Iterator for LogosLexer<'_> {
                     //println!("{:?} {:?}", token, span);
                     let mut current_token = token;
 
+                    // keywords are not known to the generated lexer, they arrive as identifiers
+                    let word = match current_token {
+                        LogosToken::Ident(_) => Some(&self.generated.source()[span.clone()]),
+                        _ => None,
+                    };
+                    let keyword = word.and_then(keyword::keyword_kind);
+                    // We can't handle this one as a comment in the generated lexer because
+                    // x.rem is a valid member access
+                    let is_rem = word.is_some_and(|word| word.eq_ignore_ascii_case("rem"));
+
                     // Some tokens are transformed to identifiers when they are following member access
                     // TODO look at the last non-whitespace character
                     // TODO add more cases
-                    if matches!(self.prev_token.kind, T![_.]) {
-                        match current_token {
-                            LogosToken::KwTrue(_)
-                            | LogosToken::KwFalse(_)
-                            | LogosToken::KwRem(_) => {
-                                let (line, column) = current_token.line_column();
-                                let rem_ident = Token {
-                                    kind: T![ident],
-                                    span: span.into(),
-                                    line,
-                                    column,
-                                };
-                                self.prev_token = rem_ident;
-                                return Some(rem_ident);
-                            }
-                            _ => {}
-                        }
+                    if matches!(self.prev_token.kind, T![_.])
+                        && (is_rem || matches!(keyword, Some(T![true] | T![false])))
+                    {
+                        let (line, column) = current_token.line_column();
+                        let rem_ident = Token {
+                            kind: T![ident],
+                            span: span.into(),
+                            line,
+                            column,
+                        };
+                        self.prev_token = rem_ident;
+                        return Some(rem_ident);
                     }
 
                     // if we find a REM we see it as a comment until the end of the line
-                    if let LogosToken::KwRem(_) = current_token {
+                    if is_rem {
                         let (rem_line, rem_column) = current_token.line_column();
                         let rem_span = span.clone();
                         let mut current_span = span.clone();
@@ -137,7 +143,7 @@ impl Iterator for LogosLexer<'_> {
                         });
                     }
 
-                    let current_kind = current_token.kind();
+                    let current_kind = keyword.unwrap_or_else(|| current_token.kind());
                     let (line, column) = match current_token {
                         LogosToken::WS | LogosToken::Comment => self.line_column(span.start),
                         _ => current_token.line_column(),
