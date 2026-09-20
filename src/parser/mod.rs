@@ -840,7 +840,7 @@ Const a = 1			' some info
                 StmtKind::Function {
                     visibility: Visibility::Default,
                     name: "add".into(),
-                    parameters: vec![Argument::ByVal("a".into()), Argument::ByVal("b".into())],
+                    parameters: vec![Argument::ByRef("a".into()), Argument::ByRef("b".into())],
                     body: vec![
                         StmtKind::Assignment {
                             full_ident: FullIdent::ident("add"),
@@ -876,7 +876,7 @@ Const a = 1			' some info
             StmtKind::Sub {
                 visibility: Visibility::Default,
                 name: "log".into(),
-                parameters: vec![Argument::ByVal("a".into()), Argument::ByVal("b".into())],
+                parameters: vec![Argument::ByRef("a".into()), Argument::ByRef("b".into())],
                 body: vec![],
             }
             .into()
@@ -1888,6 +1888,49 @@ Const a = 1			' some info
             let result = Parser::new(input).file();
             assert!(result.is_err(), "{input}: {result:?}");
         }
+    }
+
+    /// A parameter is passed by reference unless it says `ByVal`. Verified with `cscript` on
+    /// Windows: `Sub Inc(n) : n = n + 1 : End Sub` changes the variable of the caller.
+    #[test]
+    fn test_parameters_are_by_reference_by_default() {
+        let input = indoc! {"
+            Sub Foo(plain, ByRef reference, ByVal value)
+            End Sub
+            Class Bar
+                Public Property Let Baz(plain, ByRef reference, ByVal value)
+                End Property
+            End Class
+        "};
+        let items = parse_file(input);
+        let ItemKind::Statement(sub) = &items[0].node else {
+            panic!("expected a statement")
+        };
+        let StmtKind::Sub { parameters, .. } = &sub.node else {
+            panic!("expected a sub")
+        };
+        assert_eq!(
+            parameters,
+            &vec![
+                Argument::ByRef("plain".into()),
+                Argument::ByRef("reference".into()),
+                Argument::ByVal("value".into()),
+            ]
+        );
+        let ItemKind::Class {
+            member_accessors, ..
+        } = &items[1].node
+        else {
+            panic!("expected a class")
+        };
+        assert_eq!(
+            member_accessors[0].args,
+            vec![
+                ("plain".into(), ArgumentType::ByRef),
+                ("reference".into(), ArgumentType::ByRef),
+                ("value".into(), ArgumentType::ByVal),
+            ]
+        );
     }
 
     #[test]
@@ -3190,7 +3233,7 @@ Const a = 1			' some info
                         name: "IntensityScale".into(),
                         visibility: PropertyVisibility::Public { default: false },
                         property_type: PropertyType::Let,
-                        args: vec![("input".into(), ArgumentType::ByVal),],
+                        args: vec![("input".into(), ArgumentType::ByRef),],
                         body: vec![],
                     }],
                     methods: vec![],
@@ -3732,7 +3775,7 @@ Const a = 1			' some info
                     StmtKind::Function {
                         visibility: Visibility::Default,
                         name: "NullFunction".into(),
-                        parameters: vec![Argument::ByVal("a".into())],
+                        parameters: vec![Argument::ByRef("a".into())],
                         body: vec![],
                     }
                     .into()
@@ -3753,7 +3796,7 @@ Const a = 1			' some info
                     StmtKind::Function {
                         visibility: Visibility::Default,
                         name: "NullFunction".into(),
-                        parameters: vec![Argument::ByVal("a".into())],
+                        parameters: vec![Argument::ByRef("a".into())],
                         body: vec![],
                     }
                     .into()

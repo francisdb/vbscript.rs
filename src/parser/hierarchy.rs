@@ -486,7 +486,9 @@ where
                     self.consume(T![byref])?;
                     Argument::ByRef
                 } else {
-                    Argument::ByVal
+                    // by reference is the default: with `Sub Inc(n)` the `n = n + 1` changes
+                    // the variable of the caller, verified with `cscript` on Windows
+                    Argument::ByRef
                 };
 
                 let parameter_name = self.identifier(item_type)?;
@@ -1228,7 +1230,8 @@ where
                     self.consume(T![byref])?;
                     ArgumentType::ByRef
                 } else {
-                    ArgumentType::ByVal
+                    // by reference is the default, like for a sub or function
+                    ArgumentType::ByRef
                 };
                 let arg_name = self.identifier("argument name")?;
                 property_arguments.push((arg_name, argument_type));
