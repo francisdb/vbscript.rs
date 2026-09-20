@@ -12,9 +12,6 @@ keywords = ["vbscript", "vbs", "lexer", "parser", "ast"]
 categories = ["parser-implementations"]
 exclude = [".github/", "testscripts/"]
 
-[features]
-interpreter = []
-
 [dependencies]
 logos = "0.16.0"
 
