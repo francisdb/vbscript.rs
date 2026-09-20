@@ -15,10 +15,10 @@ use libfuzzer_sys::fuzz_target;
 use vbscript::lexer::{Lexer, Span};
 use vbscript::parser::Parser;
 use vbscript::parser::ast::{
-    Argument, Expr, ExprKind, Item, ItemKind, MemberAccess, Name, Stmt, StmtKind,
+    Argument, Case, Expr, ExprKind, Item, ItemKind, MemberAccess, Name, Spanned, Stmt, StmtKind,
 };
 use vbscript::parser::visit::{
-    Visitor, walk_expr, walk_item, walk_items, walk_member_access, walk_stmt,
+    Visitor, walk_case, walk_expr, walk_item, walk_items, walk_member_access, walk_stmt,
 };
 
 struct Check<'a> {
@@ -57,9 +57,19 @@ impl<'ast> Visitor<'ast> for Check<'_> {
         self.parents.pop();
     }
 
-    fn visit_member_access(&mut self, member_access: &'ast MemberAccess) {
+    fn visit_member_access(&mut self, member_access: &'ast Spanned<MemberAccess>) {
+        self.within_parent(member_access.span);
+        self.parents.push(member_access.span);
         self.name(&member_access.name);
         walk_member_access(self, member_access);
+        self.parents.pop();
+    }
+
+    fn visit_case(&mut self, case: &'ast Spanned<Case>) {
+        self.within_parent(case.span);
+        self.parents.push(case.span);
+        walk_case(self, case);
+        self.parents.pop();
     }
 
     fn visit_stmt(&mut self, stmt: &'ast Stmt) {

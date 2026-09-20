@@ -404,7 +404,8 @@ pub enum StmtKind {
     // https://learn.microsoft.com/en-us/previous-versions/6ef9w614(v=vs.85)
     SelectCase {
         test_expr: Box<Expr>,
-        cases: Vec<Case>,
+        /// Each from its `Case` to the end of its last statement.
+        cases: Vec<Spanned<Case>>,
         else_stmt: Option<Vec<Stmt>>,
     },
     SubCall {
@@ -552,7 +553,8 @@ pub enum ItemKind {
         members: Vec<MemberDefinitions>,
         /// The variables of each `Dim` in the class
         dims: Vec<Vec<VarDecl>>,
-        member_accessors: Vec<MemberAccess>,
+        /// Each from its visibility, or its `Property`, to its `End Property`.
+        member_accessors: Vec<Spanned<MemberAccess>>,
         methods: Vec<Stmt>, // expect only functions and subs
     },
     /// This is a script-level const that has visibility

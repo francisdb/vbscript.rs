@@ -148,7 +148,10 @@ impl Parser<'_> {
             };
 
             match self.peek() {
-                T![property] => member_accessors.push(self.class_property(default, visibility)?),
+                T![property] => {
+                    let property = self.class_property(default, visibility)?;
+                    member_accessors.push(self.spanned(property, member_start));
+                }
                 T![function] => {
                     let function = self.class_function(visibility, default.is_some())?;
                     methods.push(self.spanned(function, member_start));
@@ -1041,7 +1044,7 @@ impl Parser<'_> {
         self.consume(T![case])?;
         let expr = self.expression()?;
         self.consume_line_delimiter()?;
-        let mut cases: Vec<Case> = Vec::new();
+        let mut cases = Vec::new();
         let mut else_stmt = None;
         while !self.at(T![end]) {
             if else_stmt.is_some() {
@@ -1052,6 +1055,7 @@ impl Parser<'_> {
                     peek.column,
                 ));
             }
+            let case_start = self.start();
             self.consume(T![case])?;
             if self.at(T![else]) {
                 self.consume(T![else])?;
@@ -1070,7 +1074,7 @@ impl Parser<'_> {
                 }
                 self.consume_optional_line_delimiter()?;
                 let body = self.block(true, &[T![end], T![case]])?;
-                cases.push(Case { tests, body });
+                cases.push(self.spanned(Case { tests, body }, case_start));
             }
         }
         self.consume(T![end])?;
