@@ -272,6 +272,12 @@ where
         if let Some(ident) = self.identifier_opt()? {
             return Ok(self.spanned(ExprKind::Ident(ident), start));
         }
+        // `Me` is an expression, it can not be declared as a name
+        if self.at(T![me]) {
+            let me = self.consume(T![me])?;
+            let me = self.text(&me).to_string();
+            return Ok(self.spanned(ExprKind::Ident(me), start));
+        }
 
         let kind = match self.peek() {
             T![.] => {

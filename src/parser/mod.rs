@@ -1667,6 +1667,90 @@ Const a = 1			' some info
     }
 
     #[test]
+    fn test_stop_statement() {
+        let input = indoc! {"
+            Stop
+            Sub Foo()
+                If a Then
+                    Stop
+                End If
+                o.Stop
+            End Sub
+        "};
+        let items = parse_file(input);
+        assert_eq!(
+            items[0],
+            Item::from(ItemKind::Statement(StmtKind::Stop.into()))
+        );
+        assert_eq!(text(input, &items[0]), "Stop");
+        let ItemKind::Statement(sub) = &items[1].node else {
+            panic!("expected a statement")
+        };
+        let StmtKind::Sub { body, .. } = &sub.node else {
+            panic!("expected a sub")
+        };
+        let StmtKind::IfStmt { body: then, .. } = &body[0].node else {
+            panic!("expected an if")
+        };
+        assert_eq!(then, &vec![Stmt::from(StmtKind::Stop)]);
+        // a member can be called stop, as with any keyword
+        assert_eq!(
+            body[1],
+            StmtKind::SubCall {
+                fn_name: FullIdent::new(Expr::member(Expr::ident("o"), "Stop")),
+                args: vec![],
+            }
+            .into()
+        );
+    }
+
+    /// All of these are an error for `cscript` on Windows.
+    #[test]
+    fn test_stop_option_and_set_are_no_identifiers() {
+        for input in [
+            "Stop 1",
+            "Stop = 1",
+            "x = Stop",
+            "Call Stop",
+            "Dim stop",
+            "Option = 1",
+            "x = Option",
+            "Dim option",
+            "Set = 1",
+            "x = Set",
+            "Dim set",
+        ] {
+            let result = Parser::new(input).file();
+            assert!(result.is_err(), "{input}: {result:?}");
+        }
+    }
+
+    /// `Me` is an expression: `Me = 1` compiles on Windows and fails when it runs. It can
+    /// not be declared as a name.
+    #[test]
+    fn test_me_is_an_expression_but_no_name() {
+        for input in [
+            "Me.prop = 1",
+            "x = Me.prop",
+            "Set x = Me",
+            "Foo Me",
+            "Me = 1",
+        ] {
+            let result = Parser::new(input).file();
+            assert!(result.is_ok(), "{input}: {result:?}");
+        }
+        for input in [
+            "Dim Me",
+            "Sub Foo(Me)\nEnd Sub",
+            "Sub Me()\nEnd Sub",
+            "Const Me = 1",
+        ] {
+            let result = Parser::new(input).file();
+            assert!(result.is_err(), "{input}: {result:?}");
+        }
+    }
+
+    #[test]
     fn test_single_line_if() {
         let input = r#"If Err Then MsgBox "Oh noes""#;
         let stmt = parse_stmt(input, true);

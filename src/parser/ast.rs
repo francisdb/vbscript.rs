@@ -416,6 +416,8 @@ pub enum StmtKind {
         parameters: Vec<Argument>,
         body: Vec<Stmt>,
     },
+    /// Suspends execution when a debugger is attached, does nothing otherwise.
+    Stop,
     ExitDo,
     ExitFor,
     ExitFunction,
