@@ -86,12 +86,6 @@ pub struct Span {
     pub end: u32,
 }
 
-impl Span {
-    pub(crate) fn len(&self) -> u32 {
-        self.end - self.start
-    }
-}
-
 impl From<Span> for Range<usize> {
     fn from(span: Span) -> Self {
         span.start as usize..span.end as usize

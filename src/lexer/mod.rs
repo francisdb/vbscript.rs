@@ -40,6 +40,14 @@ impl<'input> LogosLexer<'input> {
     pub fn tokenize(&mut self) -> Vec<Token> {
         self.collect()
     }
+
+    /// The 1-indexed line and column of an offset on the line the lexer is currently at.
+    ///
+    /// Used for tokens that do not carry their own position.
+    fn line_column(&self, offset: usize) -> (usize, usize) {
+        let (line, line_start) = self.generated.extras;
+        (line + 1, offset - line_start + 1)
+    }
 }
 
 impl Iterator for LogosLexer<'_> {
@@ -130,7 +138,10 @@ impl Iterator for LogosLexer<'_> {
                     }
 
                     let current_kind = current_token.kind();
-                    let (line, column) = current_token.line_column();
+                    let (line, column) = match current_token {
+                        LogosToken::WS | LogosToken::Comment => self.line_column(span.start),
+                        _ => current_token.line_column(),
+                    };
 
                     // translate [non-whitepace, .] to [non-whitepace, _.]
                     // without lookahead/back on the lexer we can't do this kind of check
@@ -168,22 +179,26 @@ impl Iterator for LogosLexer<'_> {
                     self.prev_token = token;
                     Some(token)
                 }
-                Err(_) => Some(Token {
-                    kind: TokenKind::ParseError,
-                    span: span.into(),
-                    line: self.prev_token.line,
-                    column: self.prev_token.column + self.prev_token.span.len() as usize,
-                }),
+                Err(_) => {
+                    let (line, column) = self.line_column(span.start);
+                    Some(Token {
+                        kind: TokenKind::ParseError,
+                        span: span.into(),
+                        line,
+                        column,
+                    })
+                }
             },
             None if self.eof => None,
             None => {
                 self.eof = true;
+                let end = self.generated.source().len();
+                let (line, column) = self.line_column(end);
                 Some(Token {
                     kind: T![EOF],
-                    span: (self.prev_token.span.end as usize..self.prev_token.span.end as usize)
-                        .into(),
-                    line: self.prev_token.line,
-                    column: self.prev_token.column + self.prev_token.span.len() as usize,
+                    span: (end..end).into(),
+                    line,
+                    column,
                 })
             }
         }
@@ -236,6 +251,42 @@ mod test {
                 "{input}"
             );
         }
+    }
+
+    #[test]
+    fn position_of_tokens_without_own_position() {
+        let input = "x = 1\n  y = 2 $ ' note\n  ";
+        let tokens = Lexer::new(input).tokenize();
+        let positions = |kind: crate::lexer::TokenKind| -> Vec<(usize, usize)> {
+            tokens
+                .iter()
+                .filter(|t| t.kind == kind)
+                .map(|t| (t.line, t.column))
+                .collect()
+        };
+        assert_eq!(positions(T![parse_error]), [(2, 9)]);
+        assert_eq!(positions(T![comment]), [(2, 11)]);
+        assert_eq!(
+            positions(T![ws]),
+            [
+                (1, 2),
+                (1, 4),
+                (2, 1),
+                (2, 4),
+                (2, 6),
+                (2, 8),
+                (2, 10),
+                (3, 1)
+            ]
+        );
+        assert_eq!(positions(T![EOF]), [(3, 3)]);
+    }
+
+    #[test]
+    fn position_of_eof_after_newline() {
+        let tokens = Lexer::new("x\r\n").tokenize();
+        let eof = tokens.last().unwrap();
+        assert_eq!((eof.kind, eof.line, eof.column), (T![EOF], 2, 1));
     }
 
     #[test]
