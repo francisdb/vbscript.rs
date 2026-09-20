@@ -1405,7 +1405,7 @@ where
                 self.consume(T![new])?;
                 let ident = self.consume(T![ident])?;
                 let class_name = self.text(&ident);
-                ExprKind::Ident(class_name.to_string())
+                ExprKind::New(class_name.to_string())
             }
             T!['('] => {
                 // There is no AST node for grouped expressions.
