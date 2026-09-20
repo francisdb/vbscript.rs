@@ -93,6 +93,8 @@ where
     last_position: (usize, usize),
     /// Offset of the end of the last token that was consumed.
     last_end: u32,
+    /// How many subs, functions or properties we are in the body of.
+    procedure_depth: usize,
 }
 
 impl<'input> Parser<'input, TokenIter<'input>> {
@@ -104,6 +106,7 @@ impl<'input> Parser<'input, TokenIter<'input>> {
             depth: 0,
             last_position: (0, 0),
             last_end: 0,
+            procedure_depth: 0,
         }
     }
 }
@@ -891,6 +894,31 @@ Const a = 1			' some info
             }
             .into()
         );
+    }
+
+    /// A syntax error for `cscript` on Windows.
+    #[test]
+    fn test_procedure_in_a_procedure() {
+        for input in [
+            "Sub Outer\nSub Inner()\nEnd Sub\nEnd Sub",
+            "Sub Outer\nFunction Inner()\nEnd Function\nEnd Sub",
+            "Function Outer()\nSub Inner()\nEnd Sub\nEnd Function",
+            "Sub Outer\nIf a Then\nPublic Sub Inner()\nEnd Sub\nEnd If\nEnd Sub",
+            "Class C\nSub Outer\nSub Inner()\nEnd Sub\nEnd Sub\nEnd Class",
+            "Class C\nProperty Get P\nFunction Inner()\nEnd Function\nEnd Property\nEnd Class",
+        ] {
+            let error = Parser::new(input).file().unwrap_err();
+            assert!(
+                error
+                    .message()
+                    .contains("can not be declared in a procedure"),
+                "{input}: {error}"
+            );
+        }
+        // at script level a sub can be declared in a block
+        let result =
+            Parser::new("If a Then\nSub Inner()\nEnd Sub\nEnd If\nSub Next1()\nEnd Sub").file();
+        assert!(result.is_ok(), "{result:?}");
     }
 
     #[test]

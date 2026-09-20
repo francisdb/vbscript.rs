@@ -283,7 +283,7 @@ where
         let method_name = self.identifier("Sub name")?;
         let parameters = self.optional_declaration_parameter_list("Sub")?;
         self.consume_line_delimiter()?;
-        let body = self.block(true, &[T![end]])?;
+        let body = self.procedure_body()?;
         self.consume(T![end])?;
         self.consume(T![sub])?;
         self.consume_line_delimiter()?;
@@ -300,7 +300,7 @@ where
         let method_name = self.identifier("Function name")?;
         let parameters = self.optional_declaration_parameter_list("Function")?;
         self.consume_line_delimiter()?;
-        let body = self.block(true, &[T![end]])?;
+        let body = self.procedure_body()?;
         self.consume(T![end])?;
         self.consume(T![function])?;
         self.consume_line_delimiter()?;
@@ -357,7 +357,7 @@ where
         let name = self.identifier("property name")?;
         let property_arguments = self.optional_parenthesized_property_arguments()?;
 
-        let property_body = self.block(true, &[T![end]])?;
+        let property_body = self.procedure_body()?;
         self.consume(T![end])?;
         self.consume(T![property])?;
         self.consume_line_delimiter()?;
@@ -395,7 +395,7 @@ where
         let name = self.identifier("sub name")?;
         let parameters = self.optional_declaration_parameter_list("Sub")?;
         self.consume_optional_line_delimiter()?;
-        let body = self.block(true, &[T![end]])?;
+        let body = self.procedure_body()?;
 
         self.consume(T![end])?;
         self.consume(T![sub])?;
@@ -417,7 +417,7 @@ where
 
         self.consume_optional_line_delimiter()?;
         // do we need to do something special with the returned value?
-        let body = self.block(true, &[T![end]])?;
+        let body = self.procedure_body()?;
 
         self.consume(T![end])?;
         self.consume(T![function])?;
@@ -596,6 +596,25 @@ where
         result
     }
 
+    /// The statements of a sub, function or property, up to its `End`.
+    fn procedure_body(&mut self) -> Result<Vec<Stmt>, ParseError> {
+        self.procedure_depth += 1;
+        let body = self.block(true, &[T![end]]);
+        self.procedure_depth -= 1;
+        body
+    }
+
+    /// A sub or function can not be declared in a sub, function or property, which is a
+    /// syntax error for `cscript` on Windows. In an `If` at script level it can.
+    fn fail_if_in_procedure<T>(&mut self) -> Result<T, ParseError> {
+        let peek = self.peek_full()?;
+        Err(ParseError::new(
+            format!("A {} can not be declared in a procedure", peek.kind),
+            peek.line,
+            peek.column,
+        ))
+    }
+
     fn statement_inner(&mut self, consume_delimiter: bool) -> Result<Stmt, ParseError> {
         let start = self.start();
         let kind = match self.peek() {
@@ -616,6 +635,9 @@ where
                 self.consume(T![stop])?;
                 Ok(StmtKind::Stop)
             }
+            T![sub] | T![function] if self.procedure_depth > 0 => {
+                return self.fail_if_in_procedure();
+            }
             T![sub] => self.statement_sub(Visibility::Default),
             T![function] => self.statement_function(Visibility::Default),
             T![private] | T![public] => {
@@ -631,6 +653,9 @@ where
                     _ => unreachable!(),
                 };
                 match self.peek() {
+                    T![sub] | T![function] if self.procedure_depth > 0 => {
+                        return self.fail_if_in_procedure();
+                    }
                     T![sub] => self.statement_sub(visibility),
                     T![function] => self.statement_function(visibility),
                     _ => {
