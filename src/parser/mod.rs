@@ -316,7 +316,7 @@ mod test {
     use crate::parser::ast::{
         Argument, ArgumentType, Case, DoLoopCheck, DoLoopCondition, Expr, ExprKind, FullIdent,
         Item, ItemKind, Lit, MemberAccess, MemberDefinitions, PropertyType, PropertyVisibility,
-        SetRhs, Stmt, StmtKind, Visibility,
+        SetRhs, Stmt, StmtKind, VarDecl, Visibility,
     };
     use indoc::indoc;
     use pretty_assertions::assert_eq;
@@ -2124,15 +2124,15 @@ Const a = 1			' some info
             vec![
                 ItemKind::Variable {
                     visibility: Visibility::Public,
-                    vars: vec![("x".to_string(), None), ("y".to_string(), Some(vec![1, 2])),],
+                    vars: vec![VarDecl::new("x"), VarDecl::array("y", vec![1, 2]),],
                 }
                 .into(),
                 ItemKind::Variable {
                     visibility: Visibility::Private,
                     vars: vec![
-                        ("z".to_string(), None),
-                        ("a".to_string(), Some(vec![1])),
-                        ("b".to_string(), Some(vec![])),
+                        VarDecl::new("z"),
+                        VarDecl::array("a", vec![1]),
+                        VarDecl::array("b", vec![]),
                     ],
                 }
                 .into(),
@@ -2848,16 +2848,13 @@ Const a = 1			' some info
                         MemberDefinitions {
                             visibility: Visibility::Public,
                             properties: vec![
-                                ("Foo".to_string(), None),
-                                ("Bar".to_string(), Some(vec![9, 0])),
+                                VarDecl::new("Foo"),
+                                VarDecl::array("Bar", vec![9, 0]),
                             ],
                         },
                         MemberDefinitions {
                             visibility: Visibility::Private,
-                            properties: vec![
-                                ("Qux".to_string(), Some(vec![1])),
-                                ("Baz".to_string(), None),
-                            ],
+                            properties: vec![VarDecl::array("Qux", vec![1]), VarDecl::new("Baz"),],
                         },
                     ],
                     dims: vec![],
@@ -2885,14 +2882,8 @@ Const a = 1			' some info
                     name: "MyClass".to_string(),
                     members: vec![],
                     dims: vec![
-                        vec![
-                            ("Foo".to_string(), None),
-                            ("Bar".to_string(), Some(vec![9, 0])),
-                        ],
-                        vec![
-                            ("Qux".to_string(), Some(vec![1])),
-                            ("Baz".to_string(), None),
-                        ]
+                        vec![VarDecl::new("Foo"), VarDecl::array("Bar", vec![9, 0]),],
+                        vec![VarDecl::array("Qux", vec![1]), VarDecl::new("Baz"),]
                     ],
                     member_accessors: vec![],
                     methods: vec![],
@@ -2923,7 +2914,7 @@ Const a = 1			' some info
                     name: "MyClass".to_string(),
                     members: vec![MemberDefinitions {
                         visibility: Visibility::Public,
-                        properties: vec![("Enabled".to_string(), None)],
+                        properties: vec![VarDecl::new("Enabled")],
                     },],
                     dims: vec![],
                     member_accessors: vec![],

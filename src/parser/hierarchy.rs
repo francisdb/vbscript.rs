@@ -2,9 +2,9 @@ use crate::T;
 use crate::lexer::{Span, Token, TokenKind};
 use crate::parser::ast::ExprKind::WithScoped;
 use crate::parser::ast::{
-    Argument, ArgumentType, Case, ClassDim, DoLoopCheck, DoLoopCondition, ErrorClause, Expr,
-    ExprKind, FullIdent, Item, ItemKind, MemberAccess, MemberDefinitions, PropertyType,
-    PropertyVisibility, SetRhs, Stmt, StmtKind, Visibility,
+    Argument, ArgumentType, Case, DoLoopCheck, DoLoopCondition, ErrorClause, Expr, ExprKind,
+    FullIdent, Item, ItemKind, MemberAccess, MemberDefinitions, PropertyType, PropertyVisibility,
+    SetRhs, Stmt, StmtKind, VarDecl, Visibility,
 };
 use crate::parser::{ParseError, Parser};
 use std::collections::HashSet;
@@ -102,7 +102,7 @@ where
             let ident = self.consume(T![ident])?;
             let name = self.text(&ident).to_string();
             let bounds = self.const_bounds()?;
-            vars.push((name, bounds));
+            vars.push(VarDecl { name, bounds });
             if self.at(T![,]) {
                 self.consume(T![,])?;
             } else {
@@ -185,7 +185,7 @@ where
             )
         };
         for member in &members {
-            for (name, _) in &member.properties {
+            for VarDecl { name, .. } in &member.properties {
                 let lower = name.to_ascii_lowercase();
                 if member_names.contains(&lower) {
                     return Err(name_redefined(name));
@@ -194,7 +194,7 @@ where
             }
         }
         for dim in &dims {
-            for (name, _) in dim {
+            for VarDecl { name, .. } in dim {
                 let lower = name.to_ascii_lowercase();
                 if member_names.contains(&lower) {
                     return Err(name_redefined(name));
@@ -245,7 +245,7 @@ where
         while {
             let name = self.identifier("class member")?;
             let bounds = self.const_bounds()?;
-            properties.push((name, bounds));
+            properties.push(VarDecl { name, bounds });
             self.at(T![,])
         } {
             self.consume(T![,])?;
@@ -258,14 +258,14 @@ where
         Ok(member_definitions)
     }
 
-    fn class_dim(&mut self) -> Result<ClassDim, ParseError> {
+    fn class_dim(&mut self) -> Result<Vec<VarDecl>, ParseError> {
         self.consume(T![dim])?;
         let mut vars = Vec::new();
         while !self.at(T![nl]) && !self.at(T![EOF]) {
             let ident = self.consume(T![ident])?;
             let name = self.text(&ident).to_string();
             let bounds = self.const_bounds()?;
-            vars.push((name, bounds));
+            vars.push(VarDecl { name, bounds });
             if self.at(T![,]) {
                 self.consume(T![,])?;
             } else {
