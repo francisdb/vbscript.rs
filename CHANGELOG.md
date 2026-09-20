@@ -6,6 +6,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1](https://github.com/francisdb/vbscript.rs/compare/v0.5.0...v0.5.1) - 2026-09-20
+
+### Fixed
+
+- *(parser)* fail on a name that is declared twice
+- *(parser)* a parameter can not be named like its procedure or twice
+- *(parser)* a class variable can be named default or property
+
+### Other
+
+- parse Elektra and Galaxy again
+
 ## [0.5.0](https://github.com/francisdb/vbscript.rs/compare/v0.4.2...v0.5.0) - 2026-09-20
 
 ### Added
