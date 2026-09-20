@@ -3564,6 +3564,33 @@ Const a = 1			' some info
         }
     }
 
+    /// Error 1041 for `cscript` on Windows.
+    #[test]
+    fn test_parameter_name_redefined() {
+        for input in [
+            "Function F(F)\nEnd Function",
+            "Function F(a, f)\nEnd Function",
+            "Sub S(S)\nEnd Sub",
+            "Sub S(a, A)\nEnd Sub",
+            "Function F(a, b, a)\nEnd Function",
+            "Class C\nPublic Sub S(S)\nEnd Sub\nEnd Class",
+            "Class C\nPublic Function F(a, a)\nEnd Function\nEnd Class",
+            "Class C\nPublic Property Let P(P)\nEnd Property\nEnd Class",
+            "Class C\nPublic Property Let P(a, A)\nEnd Property\nEnd Class",
+        ] {
+            let error = Parser::new(input).file().unwrap_err();
+            assert!(
+                error.to_string().contains("Name redefined"),
+                "{input}: {error}"
+            );
+        }
+        let error = Parser::new("Sub S(a, A)\nEnd Sub").file().unwrap_err();
+        assert_eq!((error.line(), error.column()), (1, 10));
+
+        let result = Parser::new("Function F(a, b)\nEnd Function\nSub a(F)\nEnd Sub").file();
+        assert!(result.is_ok(), "{result:?}");
+    }
+
     #[test]
     fn class_with_only_members() {
         let input = indoc! {r#"
@@ -4487,7 +4514,9 @@ Const a = 1			' some info
     fn parse_class_named_property() {
         let input = indoc! {r#"
             Class Property
-                Sub Property(byref property)
+                Sub Property()
+                End Sub
+                Sub Other(byref property)
                 End Sub
             End Class
             Class Property2
@@ -4510,6 +4539,13 @@ Const a = 1			' some info
                             visibility: Visibility::Default,
                             default: false,
                             name: "Property".into(),
+                            parameters: vec![],
+                            body: vec![],
+                        }.into(),
+                        StmtKind::Sub {
+                            visibility: Visibility::Default,
+                            default: false,
+                            name: "Other".into(),
                             parameters: vec![Argument::ByRef("property".into())],
                             body: vec![],
                         }.into(),

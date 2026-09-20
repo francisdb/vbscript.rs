@@ -1125,6 +1125,9 @@ fn try_parsing_all_vbs_files() {
         // - Pinball and Nitro Ground Shaker hf5: `bsSaucer1..KickForceVar` double dot.
         // - Robo-War: the `Bumper*_Hit` subs call `SoundFX("Bumper", ActiveBall, 1`
         //   with the closing parenthesis missing.
+        // Rejected by `cscript` on Windows with "Name redefined", accepted by wine vbscript:
+        // - Elektra and Galaxy: `Property Let Primary(primary)`, a parameter named like
+        //   its property.
         if path.to_string_lossy().contains("X-Men(ICPjuggla)6-27c.vbs")
             || path
                 .to_string_lossy()
@@ -1142,6 +1145,10 @@ fn try_parsing_all_vbs_files() {
             || path
                 .to_string_lossy()
                 .contains("Robo-War (Gottlieb 1988).vbs")
+            || path
+                .to_string_lossy()
+                .contains("Elektra (Bally 1981) w VR Room v2.0.7.vbs")
+            || path.to_string_lossy().contains("Galaxy (Stern 1980).vbs")
         {
             println!("Skipping file: !!! {}", path.display());
             continue;
