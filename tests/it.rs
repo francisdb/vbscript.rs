@@ -1090,8 +1090,13 @@ fn try_tokenizing_all_vbs_files() {
     }
 }
 
+/// The scripts of the test corpus, which `testscripts/populate.sh` fetches.
+///
+/// Without them the tests that go over the corpus have nothing to check and pass. That is
+/// fine for a checkout or a packaged crate without the corpus, but not in CI, where it hid
+/// that the corpus was never fetched on windows.
 fn test_scripts() -> impl Iterator<Item = PathBuf> {
-    glob::glob("./testscripts/**/*.vbs")
+    let scripts: Vec<PathBuf> = glob::glob("./testscripts/**/*.vbs")
         .unwrap()
         .filter_map(Result::ok)
         .filter(|p| {
@@ -1099,6 +1104,12 @@ fn test_scripts() -> impl Iterator<Item = PathBuf> {
                 .iter()
                 .any(|f| p.to_str().unwrap().contains(f))
         })
+        .collect();
+    assert!(
+        !scripts.is_empty() || std::env::var_os("CI").is_none(),
+        "the test corpus is empty, run ./testscripts/populate.sh"
+    );
+    scripts.into_iter()
 }
 
 /// This test tries to parse all `.vbs` files going one level lower from the root of the project.

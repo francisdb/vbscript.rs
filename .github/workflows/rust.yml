@@ -34,6 +34,9 @@ jobs:
       - name: Build
         run: cargo build --verbose
       - name: Populate testscripts
+        # the default shell on windows is powershell, which does not run the
+        # script and does not fail either
+        shell: bash
         run: ./testscripts/populate.sh
       - name: Run tests
         run: cargo test --verbose
