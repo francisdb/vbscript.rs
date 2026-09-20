@@ -316,7 +316,7 @@ impl Parser<'_> {
     fn class_sub(&mut self, visibility: Visibility, default: bool) -> Result<StmtKind, ParseError> {
         self.consume(T![sub])?;
         let method_name = self.identifier("Sub name")?;
-        let parameters = self.optional_declaration_parameter_list("Sub")?;
+        let parameters = self.optional_declaration_parameter_list("Sub", &method_name)?;
         self.consume_line_delimiter()?;
         let body = self.procedure_body()?;
         self.consume(T![end])?;
@@ -338,7 +338,7 @@ impl Parser<'_> {
     ) -> Result<StmtKind, ParseError> {
         self.consume(T![function])?;
         let method_name = self.identifier("Function name")?;
-        let parameters = self.optional_declaration_parameter_list("Function")?;
+        let parameters = self.optional_declaration_parameter_list("Function", &method_name)?;
         self.consume_line_delimiter()?;
         let body = self.procedure_body()?;
         self.consume(T![end])?;
@@ -396,7 +396,7 @@ impl Parser<'_> {
         };
 
         let name = self.identifier("property name")?;
-        let property_arguments = self.optional_parenthesized_property_arguments()?;
+        let property_arguments = self.optional_parenthesized_property_arguments(&name)?;
 
         let property_body = self.procedure_body()?;
         self.consume(T![end])?;
@@ -438,7 +438,7 @@ impl Parser<'_> {
         self.consume(T![sub])?;
 
         let name = self.identifier("sub name")?;
-        let parameters = self.optional_declaration_parameter_list("Sub")?;
+        let parameters = self.optional_declaration_parameter_list("Sub", &name)?;
         self.consume_optional_line_delimiter()?;
         let body = self.procedure_body()?;
 
@@ -463,7 +463,7 @@ impl Parser<'_> {
 
         let name = self.identifier("function name")?;
 
-        let parameters = self.optional_declaration_parameter_list("Function")?;
+        let parameters = self.optional_declaration_parameter_list("Function", &name)?;
 
         self.consume_optional_line_delimiter()?;
         // do we need to do something special with the returned value?
@@ -524,6 +524,7 @@ impl Parser<'_> {
     fn optional_declaration_parameter_list(
         &mut self,
         item_type: &str,
+        procedure: &Name,
     ) -> Result<Vec<Argument>, ParseError> {
         let mut parameters: Vec<Argument> = Vec::new();
         if self.at(T!['(']) {
@@ -543,7 +544,10 @@ impl Parser<'_> {
                     Argument::ByRef
                 };
 
-                let parameter_name = self.identifier(item_type)?;
+                let taken = parameters.iter().map(|parameter| match parameter {
+                    Argument::ByVal(name) | Argument::ByRef(name) => name,
+                });
+                let parameter_name = self.parameter_name(item_type, procedure, taken)?;
                 // In case of array parameters there is a () allowed after the parameter name
                 // this is optional and totally unclear in the documentation
                 // so we just ignore it.
@@ -561,6 +565,32 @@ impl Parser<'_> {
             self.consume(T![')'])?;
         }
         Ok(parameters)
+    }
+
+    /// The name of a parameter, which can not be the name of its procedure or of an
+    /// earlier parameter: `Function F(F)` and `Sub S(a, A)` are "Name redefined" for
+    /// `cscript` on Windows.
+    fn parameter_name<'a>(
+        &mut self,
+        item_type: &str,
+        procedure: &Name,
+        mut taken: impl Iterator<Item = &'a Name>,
+    ) -> Result<Name, ParseError> {
+        let (line, column) = {
+            let peek = self.peek_full()?;
+            (peek.line, peek.column)
+        };
+        let name = self.identifier(item_type)?;
+        if name.eq_ignore_ascii_case(procedure)
+            || taken.any(|other| name.eq_ignore_ascii_case(other))
+        {
+            return Err(ParseError::new(
+                format!("Name redefined '{}'", name.node),
+                line,
+                column,
+            ));
+        }
+        Ok(name)
     }
 
     pub(crate) fn identifier(&mut self, item_type: &str) -> Result<Name, ParseError> {
@@ -1295,6 +1325,7 @@ impl Parser<'_> {
 
     fn optional_parenthesized_property_arguments(
         &mut self,
+        property: &Name,
     ) -> Result<Vec<(Name, ArgumentType)>, ParseError> {
         let mut property_arguments = Vec::new();
         if self.at(T!['(']) {
@@ -1311,7 +1342,8 @@ impl Parser<'_> {
                     // by reference is the default, like for a sub or function
                     ArgumentType::ByRef
                 };
-                let arg_name = self.identifier("argument name")?;
+                let taken = property_arguments.iter().map(|(name, _)| name);
+                let arg_name = self.parameter_name("argument name", property, taken)?;
                 property_arguments.push((arg_name, argument_type));
                 if self.at(T![,]) {
                     self.consume(T![,])?;
