@@ -724,6 +724,20 @@ mod test {
         assert_eq!(reconstructed, input);
     }
 
+    /// `cscript` on Windows evaluates `12e3` to 12000 and `123E-2` to 1.23.
+    #[test]
+    fn float_literal_without_fraction_with_multi_digit_integral() {
+        for input in ["12e3", "123E-2", "10e+2"] {
+            let tokens = Lexer::new(input).tokenize();
+            let token_kinds = tokens.iter().map(|t| t.kind).collect::<Vec<_>>();
+            assert_eq!(token_kinds, [T![real_literal], T![EOF]], "{input}");
+        }
+        // an integer directly followed by a keyword starting with `e` stays an integer
+        let tokens = Lexer::new("12else").tokenize();
+        let token_kinds = tokens.iter().map(|t| t.kind).collect::<Vec<_>>();
+        assert_eq!(token_kinds, [T![integer_literal], T![else], T![EOF]]);
+    }
+
     #[test]
     fn tokenize_member_access() {
         // for member access there can't be a space between the object and the dot
