@@ -13,6 +13,7 @@ impl<I> Parser<'_, I>
 where
     I: Iterator<Item = Token>,
 {
+    /// Parses a whole script into its items, or gives the first error.
     pub fn file(&mut self) -> Result<Vec<Item>, ParseError> {
         let mut items = Vec::new();
         while !self.at(T![EOF]) {

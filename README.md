@@ -7,9 +7,22 @@ https://crates.io/crates/vbscript
 
 https://docs.rs/vbscript
 
-## Example code
+## Usage
 
-Check the [examples folder](examples/)
+```rust
+use vbscript::parser::Parser;
+
+let items = Parser::new("Sub Greet(name)\n    MsgBox \"Hello \" & name\nEnd Sub\n").file()?;
+```
+
+`file()` gives the syntax tree of the script, or a `ParseError` with the line and column.
+Every node of the tree knows the part of the source it came from, and
+`vbscript::parser::visit` walks the tree for you. The
+[documentation](https://docs.rs/vbscript) has examples of all of that, the
+[examples folder](examples/) has a program to start from.
+
+What the parser accepts is checked against `cscript` on Windows and against a corpus of
+over 1500 real scripts.
 
 ## Rationale
 
