@@ -1147,6 +1147,47 @@ fn try_parsing_all_vbs_files() {
     }
 }
 
+/// The line index has to agree with the position the lexer gives its tokens. The lexer
+/// counts the column in bytes, so that holds when the line is ASCII up to the token.
+#[test]
+fn line_index_agrees_with_the_lexer_on_all_vbs_files() {
+    let mut compared = 0;
+    let scripts: Vec<_> = test_scripts().collect();
+    // every token of every script takes a minute, a part of them shows the same
+    for path in scripts.iter().step_by(8) {
+        let Ok(input) = std::fs::read_to_string(path) else {
+            continue;
+        };
+        let index = LineIndex::new(&input);
+        for token in Lexer::new(&input) {
+            // the lexer puts a line end on the line that follows it
+            if matches!(token.kind, T![nl] | T![line_continuation] | T![EOF]) {
+                continue;
+            }
+            let (line, column) = index.line_column(token.span.start);
+            let line_start = token.span.start as usize - (token.column - 1);
+            if !input[line_start..token.span.start as usize].is_ascii() {
+                assert!(column <= token.column);
+                assert_eq!(line, token.line);
+                continue;
+            }
+            assert_eq!(
+                (line, column),
+                (token.line, token.column),
+                "{} at offset {}",
+                path.display(),
+                token.span.start
+            );
+            compared += 1;
+        }
+    }
+    // nothing to compare without the corpus, which is fine outside of CI
+    assert!(
+        scripts.is_empty() || compared > 100_000,
+        "only compared {compared} tokens"
+    );
+}
+
 /// Checks that the spans of a parsed script make sense: a node is the trimmed source text it
 /// was parsed from, it lies within its parent and it starts after the previous child of that
 /// parent, as the children are visited in source order.
