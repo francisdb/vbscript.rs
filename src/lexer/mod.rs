@@ -67,8 +67,8 @@ impl<'input> LogosLexer<'input> {
     ///
     /// Used for tokens that do not carry their own position.
     fn line_column(&self, offset: usize) -> (usize, usize) {
-        let (line, line_start) = self.generated.extras;
-        (line + 1, offset - line_start + 1)
+        let (line, line_start, extra_bytes) = self.generated.extras;
+        (line + 1, offset - line_start - extra_bytes + 1)
     }
 }
 
@@ -120,6 +120,7 @@ impl Iterator for LogosLexer<'_> {
                                         Err(_) => {
                                             // we also consume anything that could not be tokenized
                                             // current_token = token;
+                                            generated::count_wide_characters(&mut self.generated);
                                             current_span = span;
                                         }
                                     }
@@ -156,7 +157,7 @@ impl Iterator for LogosLexer<'_> {
 
                     let current_kind = keyword.unwrap_or_else(|| current_token.kind());
                     let (line, column) = match current_token {
-                        LogosToken::WS | LogosToken::Comment => self.line_column(span.start),
+                        LogosToken::WS => self.line_column(span.start),
                         _ => current_token.line_column(),
                     };
 
@@ -209,6 +210,7 @@ impl Iterator for LogosLexer<'_> {
                 }
                 Err(_) => {
                     let (line, column) = self.line_column(span.start);
+                    generated::count_wide_characters(&mut self.generated);
                     self.last_code_kind = TokenKind::ParseError;
                     self.gap = Gap::None;
                     Some(Token {
@@ -410,6 +412,36 @@ mod test {
                 (T![nl], 3, 13),
             ]
         );
+    }
+
+    #[test]
+    fn column_counts_characters() {
+        // the string is 3 characters of 2, 3 and 4 bytes
+        let input = "x = \"é€😀\" : y = 1\nz = \"é\" & y ' é\n[é] = 1 $ é€ Rem é\nw";
+        let tokens = Lexer::new(input).tokenize();
+        let position = |text: &str, line: usize| {
+            let token = tokens
+                .iter()
+                .find(|t| t.line == line && t.text(input) == text)
+                .unwrap_or_else(|| panic!("no {text} on line {line}"));
+            token.column
+        };
+        assert_eq!(position("x", 1), 1);
+        assert_eq!(position("\"é€😀\"", 1), 5);
+        assert_eq!(position(":", 1), 11);
+        assert_eq!(position("y", 1), 13);
+        // counted from the start of each line, also after a string and up to a comment
+        assert_eq!(position("z", 2), 1);
+        assert_eq!(position("&", 2), 9);
+        assert_eq!(position("' é", 2), 13);
+        // after a name in brackets, and after what is not recognized
+        assert_eq!(position("=", 3), 5);
+        assert_eq!(position("$", 3), 9);
+        assert_eq!(position("Rem é", 3), 14);
+        assert_eq!(position("w", 4), 1);
+        // the line end after the comment that starts with `rem`
+        let line_end = tokens.iter().filter(|t| t.kind == T![nl]).nth(2).unwrap();
+        assert_eq!((line_end.line, line_end.column), (3, 19));
     }
 
     #[test]
