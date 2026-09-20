@@ -424,9 +424,8 @@ pub enum StmtKind {
         body: Vec<Stmt>,
     },
     // https://learn.microsoft.com/en-us/previous-versions//tt223ahx(v=vs.85)
-    // There are restrictions as to where these can be defined
-    // TODO apply these restrictions, also to function
-    // You can't define a Sub procedure inside any other procedure (e.g. Function, Sub or Property Get).
+    // You can't define a Sub procedure inside any other procedure (e.g. Function, Sub or
+    // Property Get), which the parser rejects. The same goes for a Function.
     Sub {
         visibility: Visibility,
         name: Name,
