@@ -79,12 +79,13 @@ pub(super) fn keyword_kind(word: &str) -> Option<TokenKind> {
         b"with" => T![with],
         b"xor" => T![xor],
         // Reserved words that have no meaning in VBScript, `cscript` on Windows fails with
-        // error 1010 "Expected identifier" when they are used as a variable name.
-        // https://isvbscriptdead.com/reserved-keywords/
-        b"as" | b"boolean" | b"byte" | b"currency" | b"double" | b"event" | b"implements"
-        | b"integer" | b"like" | b"long" | b"lset" | b"optional" | b"paramarray"
-        | b"raiseevent" | b"rset" | b"shared" | b"single" | b"static" | b"type" | b"typeof"
-        | b"variant" => T![unused],
+        // error 1010 "Expected identifier" when they are used as a variable name. This is the
+        // complete set: of 149 keywords of the Visual Basic family that were tried on Windows
+        // these are the ones it rejects that are not a keyword above.
+        b"as" | b"boolean" | b"byte" | b"currency" | b"double" | b"endif" | b"enum" | b"event"
+        | b"implements" | b"integer" | b"like" | b"long" | b"lset" | b"optional"
+        | b"paramarray" | b"raiseevent" | b"rset" | b"shared" | b"single" | b"static" | b"type"
+        | b"typeof" | b"variant" => T![unused],
         _ => return None,
     };
     Some(kind)
