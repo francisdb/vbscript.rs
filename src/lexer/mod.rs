@@ -1,4 +1,5 @@
 use crate::lexer::generated::LogosToken;
+pub use line_index::LineIndex;
 use logos::Logos;
 pub use token::{Span, Token, TokenKind};
 
@@ -6,6 +7,7 @@ use crate::T;
 
 mod generated;
 mod keyword;
+mod line_index;
 mod token;
 
 //pub type Lexer<'input> = CustomLexer<'input>;
