@@ -6,6 +6,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0](https://github.com/francisdb/vbscript.rs/compare/v0.3.1...v0.4.0) - 2026-09-20
+
+### Added
+
+- *(ast)* [**breaking**] add spans to the names in the syntax tree
+- *(ast)* add a visitor to walk the syntax tree
+- *(ast)* [**breaking**] add the Stop statement
+- *(ast)* [**breaking**] add a node for an expression in parentheses
+- *(ast)* [**breaking**] add source spans to expressions, statements and items
+
+### Fixed
+
+- *(lexer)* endif and enum are reserved words
+- *(parser)* accept the keywords that are valid names wherever a name is declared
+- *(parser)* parse `With New Foo` as a New expression
+- *(parser)* keep the argument of a sub call that is followed by else or end
+
+### Other
+
+- *(ast)* [**breaking**] use VarDecl for Dim and a struct for ReDim
+- remove the outdated vbsfmt reference from the README
+- *(parser)* drop the list of keywords that are accepted as member name
+- build the docs and fail on rustdoc warnings
+- turn the bare URLs in doc comments into links
+- *(ast)* [**breaking**] replace the name and bounds tuples with a VarDecl struct
+- *(ast)* [**breaking**] take an i32 in Expr::int and Lit::int
+- *(lexer)* [**breaking**] remove the public Token constructors
+- [**breaking**] remove the empty interpreter feature
+- *(parser)* [**breaking**] remove the public parse_literal
+
 ## [0.3.1](https://github.com/francisdb/vbscript.rs/compare/v0.3.0...v0.3.1) - 2026-09-20
 
 ### Added
