@@ -211,7 +211,7 @@ impl Iterator for LogosLexer<'_> {
 #[cfg(test)]
 mod test {
     use crate::T;
-    use crate::lexer::{Lexer, Token};
+    use crate::lexer::{Lexer, Span, Token, TokenKind};
     use indoc::indoc;
     use pretty_assertions::assert_eq;
 
@@ -260,7 +260,7 @@ mod test {
     fn position_of_tokens_without_own_position() {
         let input = "x = 1\n  y = 2 $ ' note\n  ";
         let tokens = Lexer::new(input).tokenize();
-        let positions = |kind: crate::lexer::TokenKind| -> Vec<(usize, usize)> {
+        let positions = |kind: TokenKind| -> Vec<(usize, usize)> {
             tokens
                 .iter()
                 .filter(|t| t.kind == kind)
@@ -776,6 +776,18 @@ mod test {
         assert_eq!(reconstructed, input);
     }
 
+    fn token(kind: TokenKind, span: std::ops::Range<u32>, line: usize, column: usize) -> Token {
+        Token {
+            kind,
+            span: Span {
+                start: span.start,
+                end: span.end,
+            },
+            line,
+            column,
+        }
+    }
+
     #[test]
     fn test_identifier_cant_start_with_underscore() {
         let input = "_x";
@@ -784,9 +796,9 @@ mod test {
         assert_eq!(
             tokens,
             [
-                Token::error(0..1, 1, 1),
-                Token::ident(1..2, 1, 2),
-                Token::eof(2..2, 1, 3),
+                token(T![parse_error], 0..1, 1, 1),
+                token(T![ident], 1..2, 1, 2),
+                token(T![EOF], 2..2, 1, 3),
             ]
         );
         let reconstructed = reconstruct(&input, tokens);

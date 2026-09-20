@@ -12,43 +12,6 @@ pub struct Token {
 }
 
 impl Token {
-    pub fn error(p0: Range<i32>, line: usize, column: usize) -> Token {
-        Token {
-            kind: TokenKind::ParseError,
-            span: Span {
-                start: p0.start as u32,
-                end: p0.end as u32,
-            },
-            line,
-            column,
-        }
-    }
-    pub fn eof(p0: Range<i32>, line: usize, column: usize) -> Token {
-        Token {
-            kind: TokenKind::Eof,
-            span: Span {
-                start: p0.start as u32,
-                end: p0.end as u32,
-            },
-            line,
-            column,
-        }
-    }
-
-    pub fn ident(p1: Range<i32>, line: usize, column: usize) -> Token {
-        Token {
-            kind: TokenKind::Identifier,
-            span: Span {
-                start: p1.start as u32,
-                end: p1.end as u32,
-            },
-            line,
-            column,
-        }
-    }
-}
-
-impl Token {
     pub fn is_empty(&self) -> bool {
         self.kind == TokenKind::Eof
     }
