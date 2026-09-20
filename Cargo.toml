@@ -2,11 +2,15 @@
 name = "vbscript"
 version = "0.3.0"
 edition = "2024"
-description = "Rust VBScript lexer and parser "
+rust-version = "1.88"
+description = "Rust VBScript lexer and parser"
 repository = "https://github.com/francisdb/vbscript.rs"
 readme = "README.md"
 license = "MIT"
 documentation = "https://docs.rs/vbscript"
+keywords = ["vbscript", "vbs", "lexer", "parser", "ast"]
+categories = ["parser-implementations"]
+exclude = [".github/", "testscripts/"]
 
 [features]
 interpreter = []
