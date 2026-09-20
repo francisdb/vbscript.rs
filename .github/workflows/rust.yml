@@ -40,3 +40,34 @@ jobs:
         run: ./testscripts/populate.sh
       - name: Run tests
         run: cargo test --verbose
+
+  fuzz:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install nightly Rust
+        uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: fuzz
+      - name: Install cargo-fuzz
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-fuzz
+      - name: Populate testscripts
+        run: ./testscripts/populate.sh
+      - name: Build the fuzz targets
+        # The prebuilt cargo-fuzz is a musl binary and would default the
+        # build target to its own triple, which the sanitizer cannot link
+        run: cargo fuzz build --target x86_64-unknown-linux-gnu
+      - name: Fuzz for a minute
+        # Not a replacement for a long run, it catches what a change breaks
+        # right away. Starts from the scripts of the wine test suite.
+        # The first directory is where the fuzzer keeps what it finds, it is
+        # not in the repository and has to exist.
+        run: |
+          mkdir -p fuzz/corpus/parse
+          cargo fuzz run --target x86_64-unknown-linux-gnu parse \
+            fuzz/corpus/parse testscripts/wine-vbscript/dlls/vbscript/tests \
+            -- -max_total_time=60 -max_len=4096 -timeout=10
