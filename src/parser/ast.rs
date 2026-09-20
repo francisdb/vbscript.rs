@@ -466,6 +466,15 @@ pub enum Argument {
     ByRef(Name),
 }
 
+impl Argument {
+    /// The name of the parameter.
+    pub fn name(&self) -> &Name {
+        match self {
+            Argument::ByVal(name) | Argument::ByRef(name) => name,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum PropertyVisibility {
     Public { default: bool },
