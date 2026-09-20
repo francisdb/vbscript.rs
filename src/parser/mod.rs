@@ -1154,6 +1154,17 @@ Const a = 1			' some info
     }
 
     #[test]
+    fn test_keywords_as_member_names() {
+        for word in ["default", "error", "end", "rem", "next", "type"] {
+            let input = format!(
+                "o.{word} = 1\nx = o.{word}.{word}(1)\nWith o\n.{word} = 1\nx = .{word}\nEnd With\n"
+            );
+            let result = Parser::new(&input).file();
+            assert!(result.is_ok(), "{word}: {result:?}");
+        }
+    }
+
+    #[test]
     fn test_single_line_if() {
         let input = r#"If Err Then MsgBox "Oh noes""#;
         let stmt = parse_stmt(input, true);
